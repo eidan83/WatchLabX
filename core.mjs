@@ -21,13 +21,35 @@ export function robustFilterIntervals(intervals) {
   return valid.filter(v => Math.abs(v - c) <= tol);
 }
 
+function phasePeriodicityScore(ts, T) {
+  if (!ts.length || !(T > 0)) return 0;
+  let best = 0;
+  // Multiple acoustic impulses can occur within each mechanical beat.
+  // A true beat period repeats the phase pattern at a lower harmonic order
+  // than a 2:1 subharmonic, so penalize higher circular harmonics.
+  for (let k = 1; k <= 6; k++) {
+    let cx = 0, cy = 0;
+    const w = 2 * Math.PI * k / T;
+    for (const t of ts) { cx += Math.cos(w * t); cy += Math.sin(w * t); }
+    const R = Math.hypot(cx, cy) / ts.length;
+    const score = R / Math.pow(k, 0.70);
+    if (score > best) best = score;
+  }
+  return Math.max(0, Math.min(1, best));
+}
+
 export function detectBPH(timestamps, candidates = STANDARD_BPH) {
   if (timestamps.length < 8) return null;
   const ts = timestamps.filter(Number.isFinite);
   if (ts.length < 8) return null;
 
+  // Robust recurrence detector. Mechanical watch acoustics often contain
+  // two or more impulses per actual beat (unlock / impulse / drop). Therefore
+  // consecutive event spacing is NOT assumed to equal the beat period.
+  // Instead, for every standard BPH candidate we ask whether the event pattern
+  // recurs one nominal period later. A secondary impulse then matches its own
+  // counterpart on the next beat and no longer confuses the BPH estimator.
   let best = null;
-  const scored = [];
   for (const bph of candidates) {
     const T = 3600 / bph;
     const residuals = [];
@@ -36,10 +58,13 @@ export function detectBPH(timestamps, candidates = STANDARD_BPH) {
     let opportunities = 0;
 
     for (let i = 0; i < ts.length - 1; i++) {
+      // Only count starts for which at least one nominal beat period remains.
       if (ts.at(-1) - ts[i] < 0.82 * T) continue;
       opportunities++;
 
       let localBest = null;
+      // Search a small number of later acoustic events. This covers multi-
+      // impulse beats without making random distant coincidences attractive.
       const jMax = Math.min(ts.length, i + 10);
       for (let j = i + 1; j < jMax; j++) {
         const dt = ts[j] - ts[i];
@@ -48,6 +73,7 @@ export function detectBPH(timestamps, candidates = STANDARD_BPH) {
 
         const m = Math.max(1, Math.min(4, Math.round(dt / T)));
         const err = Math.abs(dt - m * T) / T;
+        // Prefer recurrence after one beat; permit 2–4 beats for missed events.
         const score = err + 0.035 * (m - 1) + 0.004 * Math.max(0, (j - i) - m);
         if (err <= 0.16 && (!localBest || score < localBest.score)) {
           localBest = { err, score, gap: j - i, multiple: m };
@@ -68,31 +94,21 @@ export function detectBPH(timestamps, candidates = STANDARD_BPH) {
     const medErr = median(residuals);
     const medGap = median(eventGaps);
     const medMultiple = median(beatMultiples);
+    // Harmonic guard: if two candidate periods both recur, prefer the one
+    // requiring fewer intervening acoustic events and fewer missed beats.
+    const phasePeriodicity = phasePeriodicityScore(ts, T);
     const error = medErr
       + (1 - coverage) * 0.18
       + Math.max(0, medGap - 1) * 0.010
-      + Math.max(0, medMultiple - 1) * 0.025;
+      + Math.max(0, medMultiple - 1) * 0.025
+      + (1 - phasePeriodicity) * 0.10;
 
-    const result = { bph, error, coverage, medianResidual: medErr, medianEventGap: medGap, medianMultiple: medMultiple };
-    scored.push(result);
-    if (!best || error < best.error) best = result;
+    if (!best || error < best.error) {
+      best = { bph, error, coverage, medianResidual: medErr, medianEventGap: medGap, medianMultiple: medMultiple, phasePeriodicity };
+    }
   }
 
   if (!best) return null;
-
-  // Harmonic refinement: a true 28,800 BPH signal also recurs every 14,400-BPH
-  // period, and likewise for other 2:1 pairs. Prefer the doubled candidate when
-  // it is supported by direct one-beat recurrences rather than mostly 2-beat
-  // skips, and when its event-gap structure is at least as compact.
-  const doubled = scored.find(r => r.bph === best.bph * 2);
-  if (doubled &&
-      doubled.coverage >= best.coverage * 0.72 &&
-      doubled.medianResidual <= best.medianResidual + 0.045 &&
-      doubled.medianEventGap <= best.medianEventGap + 0.25 &&
-      doubled.medianMultiple <= 1.35) {
-    best = doubled;
-  }
-
   const residualQuality = Math.max(0, Math.min(1, 1 - best.medianResidual / 0.16));
   const coverageQuality = Math.max(0, Math.min(1, (best.coverage - 0.35) / 0.60));
   const gapQuality = 1 / (1 + 0.10 * Math.max(0, best.medianEventGap - 1));

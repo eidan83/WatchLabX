@@ -1,4 +1,4 @@
-import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.2.1';
+import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.2.2';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -26,7 +26,7 @@ const STORE_KEY = 'watchlabx.v0.2.0.library';
 const state = {
   stream:null, context:null, source:null, node:null, sink:null, running:false, startedAt:null, raf:0,
   ticks:[], levelHistory:[], latestLevel:{rms:0,noise:1e-7,peak:0,channels:[],selectedChannel:0}, latestEvent:null,
-  lockedBph:null, candidateBph:null, candidateStreak:0, bphDetection:null, lastTiming:null,
+  lockedBph:null, lockedBphConfidence:0, candidateBph:null, candidateStreak:0, bphDetection:null, lastTiming:null,
   displayRate:null, rateTrail:[], currentReading:null, lastAnalysisWall:0, staleSince:null, targetDurationSec:30, finishing:false,
   library:loadLibrary(), activeWatchId:null
 };
@@ -94,14 +94,14 @@ async function start(){
     const stream=await navigator.mediaDevices.getUserMedia(requestedConstraints(els.inputDevice.value));
     const AC=window.AudioContext||window.webkitAudioContext;
     const context=new AC({latencyHint:'interactive',sampleRate:48000});
-    await context.audioWorklet.addModule('./tick-processor.js?v=0.2.1');
+    await context.audioWorklet.addModule('./tick-processor.js?v=0.2.2');
     await context.resume();
     const source=context.createMediaStreamSource(stream);
     const node=new AudioWorkletNode(context,'watchlabx-tick-processor',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:2,channelCountMode:'max',channelInterpretation:'discrete'});
     const sink=context.createGain(); sink.gain.value=0;
     source.connect(node).connect(sink).connect(context.destination);
     node.port.onmessage=onAudioMessage;
-    Object.assign(state,{stream,context,source,node,sink,running:true,startedAt:performance.now(),ticks:[],levelHistory:[],latestEvent:null,lockedBph:null,candidateBph:null,candidateStreak:0,bphDetection:null,lastTiming:null,displayRate:null,rateTrail:[],currentReading:null,lastAnalysisWall:0,targetDurationSec:selectedDuration(),finishing:false});
+    Object.assign(state,{stream,context,source,node,sink,running:true,startedAt:performance.now(),ticks:[],levelHistory:[],latestEvent:null,lockedBph:null,lockedBphConfidence:0,candidateBph:null,candidateStreak:0,bphDetection:null,lastTiming:null,displayRate:null,rateTrail:[],currentReading:null,lastAnalysisWall:0,targetDurationSec:selectedDuration(),finishing:false});
     applySensitivity(); showTrackSettings(stream.getAudioTracks()[0]);
     els.startBtn.disabled=true; els.stopBtn.disabled=false; els.saveResultBtn.disabled=true; els.inputDevice.disabled=true; els.refreshDevicesBtn.disabled=true; els.durationSelect.disabled=true; els.position.disabled=true; els.watchSelect.disabled=true;
     els.countdownValue.textContent=formatCountdown(state.targetDurationSec); els.timerCaption.textContent='remaining'; els.progressBar.style.width='0%';
@@ -154,7 +154,7 @@ async function finishTimedMeasurement(){
 
 
 function reset(){
-  state.ticks=[]; state.levelHistory=[]; state.latestEvent=null; state.lockedBph=null; state.candidateBph=null; state.candidateStreak=0; state.bphDetection=null; state.lastTiming=null; state.displayRate=null; state.rateTrail=[]; state.currentReading=null;
+  state.ticks=[]; state.levelHistory=[]; state.latestEvent=null; state.lockedBph=null; state.lockedBphConfidence=0; state.candidateBph=null; state.candidateStreak=0; state.bphDetection=null; state.lastTiming=null; state.displayRate=null; state.rateTrail=[]; state.currentReading=null;
   state.startedAt=state.running?performance.now():null;
   state.node?.port.postMessage({type:'reset'}); clearLive({keepSignal:false}); updateIdleCountdown(); drawAll();
 }
@@ -203,14 +203,45 @@ function recentTicks(seconds){
 
 function updateBphLock(){
   if(els.bphMode.value!=='auto'){
-    const manual=Number(els.bphMode.value); state.lockedBph=manual; setDetectorRefractory(manual); return manual;
+    const manual=Number(els.bphMode.value);
+    state.lockedBph=manual;
+    state.lockedBphConfidence=1;
+    setDetectorRefractory(manual);
+    return manual;
   }
-  const d=detectBPH(recentTicks(4)); state.bphDetection=d;
-  if(!state.lockedBph){
-    if(d?.bph&&d.confidence>=0.46){
-      if(state.candidateBph===d.bph) state.candidateStreak++; else {state.candidateBph=d.bph;state.candidateStreak=1;}
-      if(state.candidateStreak>=2||d.confidence>=0.78){ state.lockedBph=d.bph; setDetectorRefractory(d.bph); }
-    }
+
+  // Auto mode deliberately keeps the acoustic detector at its neutral 55 ms
+  // refractory period. A wrong provisional BPH must never feed back into the
+  // detector and suppress the events needed to correct itself.
+  state.node?.port.postMessage({type:'config',minGapSec:.055});
+
+  // v0.1.3 baseline recurrence detector, evaluated continuously. Do not make
+  // the first plausible result permanent: phone microphones often produce a
+  // noisy first second while the watch is being positioned.
+  const d=detectBPH(state.ticks.slice(-360));
+  state.bphDetection=d;
+  if(!d?.bph || d.confidence<0.32) return state.lockedBph;
+
+  if(d.bph===state.lockedBph){
+    state.lockedBphConfidence=d.confidence;
+    state.candidateBph=null;
+    state.candidateStreak=0;
+    return state.lockedBph;
+  }
+
+  if(state.candidateBph===d.bph) state.candidateStreak++;
+  else { state.candidateBph=d.bph; state.candidateStreak=1; }
+
+  // Fast first acquisition, but reversible. If the first result was a harmonic
+  // or an acoustic transient, two/three later confirmations can replace it.
+  const noCurrent=!state.lockedBph;
+  const immediate=noCurrent && d.confidence>=0.60;
+  const needed=noCurrent ? 2 : (d.confidence>=0.65 ? 2 : 3);
+  if(immediate || state.candidateStreak>=needed){
+    state.lockedBph=d.bph;
+    state.lockedBphConfidence=d.confidence;
+    state.candidateBph=null;
+    state.candidateStreak=0;
   }
   return state.lockedBph;
 }
@@ -228,8 +259,8 @@ function updateAnalysis(){
   }
 
   els.bphValue.textContent=bph.toLocaleString();
-  const bphC=els.bphMode.value==='auto'?(state.bphDetection?.confidence||0):1;
-  els.bphConfidence.textContent=els.bphMode.value==='auto'?`${Math.round(bphC*100)}% lock`:'manual';
+  const bphC=els.bphMode.value==='auto'?(state.lockedBphConfidence||0):1;
+  els.bphConfidence.textContent=els.bphMode.value==='auto'?`${Math.round(bphC*100)}% • auto correcting`:'manual';
 
   const timing=analyzeTimingLive(state.ticks,bph,{windowSec:12,tolerance:0.22,maxSeeds:14});
   if(!timing){
@@ -241,7 +272,7 @@ function updateAnalysis(){
   const lastClean=timing.cleanedTimes.at(-1);
   const T=3600/bph; const stale=nowAudio-lastClean>Math.max(0.70,5*T);
   if(stale){
-    state.lockedBph=null; state.candidateBph=null; state.candidateStreak=0; clearLive({keepSignal:true});
+    state.lockedBph=null; state.lockedBphConfidence=0; state.candidateBph=null; state.candidateStreak=0; clearLive({keepSignal:true});
     els.analysisState.textContent='Watch removed — waiting for beats'; return;
   }
 
@@ -354,7 +385,7 @@ function clearTests(){const w=state.library.watches.find(x=>x.id===state.activeW
 
 els.startBtn.addEventListener('click',start);els.stopBtn.addEventListener('click',stop);els.resetBtn.addEventListener('click',reset);els.saveResultBtn.addEventListener('click',()=>saveMeasurement());els.durationSelect.addEventListener('change',updateIdleCountdown);
 els.refreshDevicesBtn.addEventListener('click',()=>refreshInputDevices({requestPermission:true}));els.sensitivity.addEventListener('input',applySensitivity);
-els.bphMode.addEventListener('change',()=>{state.lockedBph=null;state.candidateBph=null;state.candidateStreak=0;state.node?.port.postMessage({type:'config',minGapSec:.055});});
+els.bphMode.addEventListener('change',()=>{state.lockedBph=null;state.lockedBphConfidence=0;state.candidateBph=null;state.candidateStreak=0;state.node?.port.postMessage({type:'config',minGapSec:.055});});
 els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);
 window.addEventListener('resize',drawAll);window.addEventListener('beforeunload',()=>state.stream?.getTracks().forEach(t=>t.stop()));navigator.mediaDevices?.addEventListener?.('devicechange',()=>{if(!state.running)refreshInputDevices();});
 
