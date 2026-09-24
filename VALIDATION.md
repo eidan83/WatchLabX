@@ -1,24 +1,31 @@
-# WatchLabX v0.4.1 Validation
+# WatchLabX v0.4.2 validation
 
-Validation completed for the Sensor Stability hotfix.
+## Release intent
+This release simplifies the mobile workflow: watch position is manual, screen wake lock is active during timing when supported, and saved watches can be deleted safely.
 
-## Automated regression suite
+## Automated regression results
+- Core timing/BPH tests: PASS
+- Robustness / missed & false impulses: PASS
+- Multi-impulse and triple-impulse recurrence: PASS
+- v0.2.0 fast/robust timing regression: PASS
+- v0.2.1 mobile timer regression: PASS
+- v0.2.2 BPH harmonic-discrimination regression: PASS
+- v0.3.0 calibration/report regression: PASS
+- v0.3.1 bilingual guide/Watch Passport regression: PASS
+- v0.4.2 manual-position / wake-lock / delete-watch checks: PASS
 
-- Core timing / robustness / sensitivity / multi-impulse: PASS
-- v0.2.0 fast/robust analysis: PASS
-- v0.2.1 mobile timer/UI: PASS
-- v0.2.2 BPH accuracy/harmonic regression: PASS
-- v0.3.0 calibration/report: PASS
-- v0.3.1 bilingual guide/passport: PASS
-- v0.4.0 Sensor Lab: PASS
-- v0.4.1 sensor stability: PASS
+## Stability protection
+The scientific engines remain byte-for-byte identical to v0.4.1:
+- `core.mjs`
+- `report.mjs`
+- `tick-processor.js`
+- `sensor.mjs`
 
-## New v0.4.1 checks
+Only the application workflow/UI integration in `app.mjs`, `index.html`, and `styles.css` was changed.
 
-- Stable orientation cloud with injected outliers recovers the correct normalized direction.
-- Outlier samples are rejected during orientation calibration.
-- Learned DU profile correctly matches a nearby live orientation.
-- Orientation learning uses a multi-second capture window rather than a single instantaneous sample.
-- Auto-position logic requires a dwell interval before changing the selected position.
-
-The acoustic timing engine and calibration/report logic were not redesigned in this hotfix.
+## v0.4.2 checks
+- DU/DD/CU/CD/CL/CR remain manually selectable.
+- Orientation Assist UI and DeviceMotion runtime permission logic are removed.
+- Magnetometer screening remains available.
+- Screen Wake Lock is requested at measurement start, released at stop, and reacquired when a running page becomes visible again.
+- A saved watch can be deleted only after an explicit confirmation; its measurements, photos, and magnetic tests are removed with that watch record.

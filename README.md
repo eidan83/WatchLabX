@@ -1,17 +1,20 @@
-# WatchLabX v0.4.1 — Sensor Stability
+# WatchLabX v0.4.2
 
-This hotfix focuses only on Orientation Assist stability. The timing engine, BPH logic, calibration, reports and Watch Passport are inherited from v0.4.0.
+Mobile-first mechanical watch timing and inspection tool by Dr.Eidan.
 
-## Orientation learning
+## Main workflow
+1. Select or create a watch.
+2. Select the physical watch position manually: DU, DD, CU, CD, CL, or CR.
+3. Select a test duration and press Start.
+4. WatchLabX requests a screen wake lock while the measurement is running (when supported by the browser).
+5. The timed result is saved automatically when valid.
+6. Complete all six positions for a report.
 
-Choose a position (DU/DD/CU/CD/CL/CR), hold the phone/watch assembly still, and tap **Learn selected position**. WatchLabX collects about 2.2 seconds of motion-sensor samples, rejects outliers, and saves a robust mean gravity direction plus its angular spread.
+## Sensor Lab
+The Sensor Lab no longer tries to infer the watch position from phone orientation. Its optional sensor function is experimental magnetic-field screening only.
 
-## Auto position
+## Watch management
+The Watch profile panel includes Delete watch. Deletion requires confirmation and removes that watch's saved measurements, photos, and magnetic screening records. Device-level rate calibration is retained.
 
-A position is not auto-selected from one noisy sensor sample. The match must remain stable for about 650 ms and pass both angular-distance and separation checks.
-
-## Notes
-
-- Re-learn the six positions after installing v0.4.1 for best results.
-- Keep the phone/watch coupling geometry consistent with the geometry used during learning.
-- Magnetic screening remains experimental and unchanged.
+## Privacy
+Audio, photos, timing data, and sensor results are processed/stored locally in the browser unless the user explicitly exports them.

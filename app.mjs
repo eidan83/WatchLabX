@@ -1,6 +1,6 @@
-import { vectorMagnitude, normalizeVector, meanVector, robustOrientationStats, fieldStats, deltaVectorMagnitude, matchOrientation, axisPosture } from './sensor.mjs?v=0.4.1';
-import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.4.1';
-import { weightedCalibration, applyRateCalibration, summarizeMeasurements, assessmentFromSummary } from './report.mjs?v=0.4.1';
+import { fieldStats, deltaVectorMagnitude } from './sensor.mjs?v=0.4.2';
+import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.4.2';
+import { weightedCalibration, applyRateCalibration, summarizeMeasurements, assessmentFromSummary } from './report.mjs?v=0.4.2';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -12,16 +12,16 @@ const els = {
   jitterValue:$('jitterValue'), signalValue:$('signalValue'), signalLabel:$('signalLabel'), alternationValue:$('alternationValue'),
   elapsed:$('elapsed'), eventCount:$('eventCount'), sampleRate:$('sampleRate'), progressBar:$('progressBar'),
   rateGauge:$('rateGauge'), timegrapher:$('timegrapher'), levelPlot:$('levelPlot'),
-  watchSelect:$('watchSelect'), watchName:$('watchName'), watchModel:$('watchModel'), watchMovement:$('watchMovement'), saveWatchBtn:$('saveWatchBtn'),
+  watchSelect:$('watchSelect'), watchName:$('watchName'), watchModel:$('watchModel'), watchMovement:$('watchMovement'), saveWatchBtn:$('saveWatchBtn'), deleteWatchBtn:$('deleteWatchBtn'),
   positionSummary:$('positionSummary'), historyBody:$('historyBody'), sessionSummary:$('sessionSummary'), exportCsvBtn:$('exportCsvBtn'), clearTestsBtn:$('clearTestsBtn'),
   echoSetting:$('echoSetting'), noiseSetting:$('noiseSetting'), gainSetting:$('gainSetting'), channelSetting:$('channelSetting'), sampleSetting:$('sampleSetting'), deviceSetting:$('deviceSetting'),
-  selectedChannel:$('selectedChannel'), channelLevels:$('channelLevels'), peakNoise:$('peakNoise'), thresholdSetting:$('thresholdSetting'), secureNote:$('secureNote'), toast:$('toast'),
+  selectedChannel:$('selectedChannel'), channelLevels:$('channelLevels'), peakNoise:$('peakNoise'), thresholdSetting:$('thresholdSetting'), secureNote:$('secureNote'), toast:$('toast'), wakeStatus:$('wakeStatus'),
   calibrationChip:$('calibrationChip'), calibrationStatus:$('calibrationStatus'), calibrationDetail:$('calibrationDetail'), calibrationReference:$('calibrationReference'), addCalibrationBtn:$('addCalibrationBtn'), clearCalibrationBtn:$('clearCalibrationBtn'),
   reportBtn:$('reportBtn'), reportModal:$('reportModal'), reportContent:$('reportContent'), closeReportBtn:$('closeReportBtn'), printReportBtn:$('printReportBtn'), downloadReportBtn:$('downloadReportBtn'),
   helpBtn:$('helpBtn'), helpModal:$('helpModal'), closeHelpBtn:$('closeHelpBtn'), guideEnBtn:$('guideEnBtn'), guideArBtn:$('guideArBtn'), guideEn:$('guideEn'), guideAr:$('guideAr'),
   frontPhotoInput:$('frontPhotoInput'), backPhotoInput:$('backPhotoInput'), frontPhotoPreview:$('frontPhotoPreview'), backPhotoPreview:$('backPhotoPreview'), frontPhotoEmpty:$('frontPhotoEmpty'), backPhotoEmpty:$('backPhotoEmpty'), removeFrontPhotoBtn:$('removeFrontPhotoBtn'), removeBackPhotoBtn:$('removeBackPhotoBtn'),
   passportSummary:$('passportSummary'), passportTitle:$('passportTitle'), passportTestCount:$('passportTestCount'),
-  sensorBadge:$('sensorBadge'), enableSensorsBtn:$('enableSensorsBtn'), orientationDetected:$('orientationDetected'), orientationConfidence:$('orientationConfidence'), phonePosture:$('phonePosture'), gravityVector:$('gravityVector'), autoPositionToggle:$('autoPositionToggle'), learnPositionBtn:$('learnPositionBtn'), clearOrientationBtn:$('clearOrientationBtn'), orientationProfiles:$('orientationProfiles'), magnetometerStatus:$('magnetometerStatus'), magCurrent:$('magCurrent'), magVector:$('magVector'), magStability:$('magStability'), captureBaselineBtn:$('captureBaselineBtn'), captureWatchFieldBtn:$('captureWatchFieldBtn'), magneticResult:$('magneticResult')
+  sensorBadge:$('sensorBadge'), enableSensorsBtn:$('enableSensorsBtn'), magnetometerStatus:$('magnetometerStatus'), magCurrent:$('magCurrent'), magVector:$('magVector'), magStability:$('magStability'), captureBaselineBtn:$('captureBaselineBtn'), captureWatchFieldBtn:$('captureWatchFieldBtn'), magneticResult:$('magneticResult')
 };
 
 const POSITIONS = {
@@ -36,8 +36,8 @@ const state = {
   ticks:[], levelHistory:[], latestLevel:{rms:0,noise:1e-7,peak:0,channels:[],selectedChannel:0}, latestEvent:null,
   lockedBph:null, lockedBphConfidence:0, candidateBph:null, candidateStreak:0, bphDetection:null, lastTiming:null,
   displayRate:null, rateTrail:[], currentReading:null, lastAnalysisWall:0, staleSince:null, targetDurationSec:30, finishing:false,
-  library:loadLibrary(), activeWatchId:null,
-  sensors:{motionEnabled:false,motionVector:null,motionSamples:[],motionMatch:null,magnetometer:null,magnetometerState:'off',magReadings:[],magCurrent:null,magBaseline:null,magBusy:false,orientationCapture:false,matchCandidate:null,matchCandidateSince:0,lastAutoCommit:0}
+  library:loadLibrary(), activeWatchId:null, wakeLock:null,
+  sensors:{magnetometer:null,magnetometerState:'off',magReadings:[],magCurrent:null,magBaseline:null,magBusy:false}
 };
 state.activeWatchId = state.library.activeWatchId || null;
 
@@ -79,108 +79,22 @@ function setMicStatus(text,kind='idle'){ els.micStatus.textContent=text; els.mic
 function setQuality(text,kind='idle'){ els.qualityBadge.textContent=text; els.qualityBadge.className=`quality-badge ${kind}`; }
 
 
-function sensorPositionLabel(code){ return POSITIONS[code]?.short || code || '—'; }
-function motionWindow(ms=900){
-  const cutoff=performance.now()-ms;
-  return state.sensors.motionSamples.filter(s=>s.t>=cutoff);
-}
-function motionStats(ms=900){ return robustOrientationStats(motionWindow(ms)); }
-function motionMean(){ const s=motionStats(900); return s ? {x:s.x,y:s.y,z:s.z,count:s.count} : meanVector(state.sensors.motionSamples.slice(-24)); }
-function updateSensorBadge(){
-  const motion=state.sensors.motionEnabled,mag=state.sensors.magnetometerState==='active';
-  if(motion&&mag){els.sensorBadge.textContent='Motion + magnetometer';els.sensorBadge.className='sensor-badge live';}
-  else if(motion){els.sensorBadge.textContent='Orientation active';els.sensorBadge.className='sensor-badge live';}
-  else if(mag){els.sensorBadge.textContent='Magnetometer active';els.sensorBadge.className='sensor-badge live';}
-  else {els.sensorBadge.textContent='Sensors off';els.sensorBadge.className='sensor-badge idle';}
-}
-function onDeviceMotion(ev){
-  const a=ev.accelerationIncludingGravity;
-  if(!a||![a.x,a.y,a.z].every(v=>Number.isFinite(Number(v)))) return;
-  const now=performance.now();
-  const sample={x:Number(a.x),y:Number(a.y),z:Number(a.z),t:now};
-  state.sensors.motionSamples.push(sample);if(state.sensors.motionSamples.length>240)state.sensors.motionSamples.shift();
-  const stats=motionStats(900);if(!stats)return;
-  const mean={x:stats.x,y:stats.y,z:stats.z};state.sensors.motionVector=mean;
-  const n=normalizeVector(mean),posture=axisPosture(mean);
-  els.phonePosture.textContent=`${posture.label} · ${posture.axis}`;
-  els.gravityVector.textContent=n?`${n.x.toFixed(2)} / ${n.y.toFixed(2)} / ${n.z.toFixed(2)} · σθ ${stats.rmsDeg.toFixed(1)}°`:'—';
-  const match=matchOrientation(mean,state.library.orientationProfiles||{},24);state.sensors.motionMatch=match;
-  if(match?.matched){
-    const stableNow=stats.rmsDeg<=5.5 && stats.quality>=0.35;
-    if(state.sensors.matchCandidate!==match.position){state.sensors.matchCandidate=match.position;state.sensors.matchCandidateSince=now;}
-    const dwell=now-state.sensors.matchCandidateSince;
-    const stableMatch=stableNow && dwell>=650;
-    els.orientationDetected.textContent=`${sensorPositionLabel(match.position)} · ${POSITIONS[match.position]?.label||match.position}`;
-    els.orientationConfidence.textContent=`${Math.round(match.confidence*100)}% · ${match.angle.toFixed(1)}° · ${stableMatch?'stable':'hold still'}`;
-    if(state.library.autoPosition && stableMatch && match.confidence>=0.50 && !state.running && els.position.value!==match.position && now-state.sensors.lastAutoCommit>900){
-      els.position.value=match.position;state.sensors.lastAutoCommit=now;
-    }
-  }else{
-    state.sensors.matchCandidate=null;state.sensors.matchCandidateSince=0;
-    if(Object.keys(state.library.orientationProfiles||{}).length){
-      els.orientationDetected.textContent='No learned posture match';els.orientationConfidence.textContent=match?`${match.angle.toFixed(1)}° away · hold still`:'—';
-    }else {els.orientationDetected.textContent='Learn a position first';els.orientationConfidence.textContent='—';}
-  }
-}
-function renderOrientationProfiles(){
-  const profiles=state.library.orientationProfiles||{};els.orientationProfiles.innerHTML='';
-  Object.entries(POSITIONS).forEach(([code,p])=>{
-    const b=document.createElement('button');b.type='button';const profile=profiles[code],learned=Boolean(profile);
-    b.className=`orientation-chip ${learned?'learned':''}`;
-    const detail=learned?(Number.isFinite(Number(profile.rmsDeg))?`σ ${Number(profile.rmsDeg).toFixed(1)}°`:'learned'):'—';
-    b.innerHTML=`<b>${code}</b><span>${detail}</span>`;
-    b.addEventListener('click',()=>{els.position.value=code;showToast(`${p.label} selected`);});els.orientationProfiles.appendChild(b);
-  });
-  els.autoPositionToggle.checked=Boolean(state.library.autoPosition);
-}
-async function learnSelectedPosition(){
-  if(state.sensors.orientationCapture)return;
-  if(!state.sensors.motionEnabled){showToast('Enable phone sensors first');return;}
-  state.sensors.orientationCapture=true;
-  const code=els.position.value,old=els.learnPositionBtn.textContent;
-  els.learnPositionBtn.disabled=true;
-  try{
-    const start=performance.now();
-    while(performance.now()-start<2200){
-      const remain=Math.max(0,2.2-(performance.now()-start)/1000);
-      els.learnPositionBtn.textContent=`Hold still ${remain.toFixed(1)}s`;
-      await new Promise(r=>setTimeout(r,100));
-    }
-    const samples=state.sensors.motionSamples.filter(s=>s.t>=start && s.t<=performance.now());
-    const stats=robustOrientationStats(samples);
-    if(!stats||stats.count<12){showToast('Not enough motion-sensor samples — try again');return;}
-    if(stats.rmsDeg>7.5 || stats.quality<0.22){showToast(`Too much movement (σ ${stats.rmsDeg.toFixed(1)}°) — hold the phone steadier`);return;}
-    state.library.orientationProfiles=state.library.orientationProfiles||{};
-    state.library.orientationProfiles[code]={x:stats.x,y:stats.y,z:stats.z,rmsDeg:+stats.rmsDeg.toFixed(3),quality:+stats.quality.toFixed(3),sampleCount:stats.count,timestamp:new Date().toISOString()};
-    saveLibrary();renderOrientationProfiles();state.sensors.matchCandidate=null;state.sensors.matchCandidateSince=0;
-    showToast(`${code} learned from ${stats.count} stable samples · σ ${stats.rmsDeg.toFixed(1)}°`);
-  }finally{
-    els.learnPositionBtn.disabled=false;els.learnPositionBtn.textContent=old;state.sensors.orientationCapture=false;
-  }
-}
-function clearOrientationProfiles(){
-  if(!Object.keys(state.library.orientationProfiles||{}).length)return;
-  if(confirm('Clear all learned phone/watch position postures?')){state.library.orientationProfiles={};saveLibrary();state.sensors.motionMatch=null;renderOrientationProfiles();els.orientationDetected.textContent='Learn a position first';els.orientationConfidence.textContent='—';showToast('Learned positions cleared');}
-}
 function onMagReading(){
   const m=state.sensors.magnetometer;if(!m)return;const x=Number(m.x),y=Number(m.y),z=Number(m.z);if(![x,y,z].every(Number.isFinite))return;
   const r={x,y,z,t:performance.now()};state.sensors.magCurrent=r;state.sensors.magReadings.push(r);if(state.sensors.magReadings.length>800)state.sensors.magReadings.shift();
   const recent=state.sensors.magReadings.slice(-20),stats=fieldStats(recent);if(!stats)return;
   els.magCurrent.textContent=`${stats.magnitude.toFixed(1)} µT`;els.magVector.textContent=`${x.toFixed(1)} / ${y.toFixed(1)} / ${z.toFixed(1)} µT`;els.magStability.textContent=`σ ${stats.magStd.toFixed(2)} µT`;
 }
+function updateSensorBadge(){
+  const mag=state.sensors.magnetometerState==='active';
+  els.sensorBadge.textContent=mag?'Magnetometer active':'Magnetometer off';
+  els.sensorBadge.className=`sensor-badge ${mag?'live':'idle'}`;
+}
 function onMagError(ev){
   const name=ev?.error?.name||'Sensor error';state.sensors.magnetometerState='error';els.magnetometerStatus.textContent=`Unavailable · ${name}`;els.captureBaselineBtn.disabled=true;els.captureWatchFieldBtn.disabled=true;updateSensorBadge();
 }
 async function enableSensors(){
   els.enableSensorsBtn.disabled=true;els.enableSensorsBtn.textContent='Enabling…';
-  let motionOk=state.sensors.motionEnabled;
-  try{
-    if('DeviceMotionEvent' in window){
-      let granted=true;
-      if(typeof DeviceMotionEvent.requestPermission==='function') granted=(await DeviceMotionEvent.requestPermission())==='granted';
-      if(granted&&!state.sensors.motionEnabled){window.addEventListener('devicemotion',onDeviceMotion,{passive:true});state.sensors.motionEnabled=true;motionOk=true;}
-    }
-  }catch(e){console.warn('Motion sensor permission',e);}
   if('Magnetometer' in window && !state.sensors.magnetometer){
     try{
       const mag=new window.Magnetometer({frequency:10});mag.addEventListener('reading',onMagReading);mag.addEventListener('error',onMagError);mag.start();state.sensors.magnetometer=mag;state.sensors.magnetometerState='active';els.magnetometerStatus.textContent='Live magnetometer';els.captureBaselineBtn.disabled=false;
@@ -188,8 +102,8 @@ async function enableSensors(){
   }else if(!('Magnetometer' in window)){
     state.sensors.magnetometerState='unsupported';els.magnetometerStatus.textContent='Not exposed by this browser';els.captureBaselineBtn.disabled=true;els.captureWatchFieldBtn.disabled=true;
   }
-  updateSensorBadge();els.enableSensorsBtn.disabled=false;els.enableSensorsBtn.textContent=motionOk||state.sensors.magnetometerState==='active'?'Sensors enabled':'Try sensors again';
-  if(!motionOk&&state.sensors.magnetometerState!=='active')showToast('This browser did not expose phone sensors');
+  updateSensorBadge();els.enableSensorsBtn.disabled=false;els.enableSensorsBtn.textContent=state.sensors.magnetometerState==='active'?'Magnetometer enabled':'Try magnetic sensor again';
+  if(state.sensors.magnetometerState!=='active')showToast('This browser did not expose the magnetometer');
 }
 async function collectMagWindow(button,label){
   if(state.sensors.magBusy||state.sensors.magnetometerState!=='active')return null;state.sensors.magBusy=true;
@@ -219,7 +133,7 @@ function renderMagneticResult(){
   els.magneticResult.innerHTML=`<div class="magnetic-kpis"><div><small>ΔB</small><strong>${Number(latest.deltaB).toFixed(1)}</strong><span>µT</span></div><div><small>Background</small><strong>${Number(latest.baseline?.magnitude).toFixed(1)}</strong><span>µT</span></div><div><small>With watch</small><strong>${Number(latest.watch?.magnitude).toFixed(1)}</strong><span>µT</span></div></div><small>${new Date(latest.timestamp).toLocaleString()} · experimental field-deviation screening</small>`;
 }
 function initializeSensorUi(){
-  renderOrientationProfiles();renderMagneticResult();
+  renderMagneticResult();
   if('Magnetometer' in window)els.magnetometerStatus.textContent='Available after sensor permission';else els.magnetometerStatus.textContent='Not exposed by this browser';
   updateSensorBadge();
 }
@@ -257,9 +171,32 @@ function formatCountdown(seconds){
 function selectedDuration(){ return Math.max(5,Number(els.durationSelect?.value)||30); }
 function updateIdleCountdown(){ if(!state.running&&els.countdownValue){els.countdownValue.textContent=formatCountdown(selectedDuration());els.timerCaption.textContent='test duration';els.progressBar.style.width='0%';} }
 
+function setWakeStatus(text,kind=''){
+  if(!els.wakeStatus)return;
+  els.wakeStatus.textContent=text;
+  els.wakeStatus.className=`wake-status ${kind}`.trim();
+}
+async function acquireWakeLock(){
+  if(!('wakeLock' in navigator)){setWakeStatus('Wake lock unavailable','warn');return false;}
+  try{
+    if(state.wakeLock && !state.wakeLock.released){setWakeStatus('Screen awake','awake');return true;}
+    const lock=await navigator.wakeLock.request('screen');
+    state.wakeLock=lock;setWakeStatus('Screen awake','awake');
+    lock.addEventListener('release',()=>{
+      if(state.wakeLock===lock)state.wakeLock=null;
+      setWakeStatus(state.running?'Wake lock paused':'Screen sleep allowed',state.running?'warn':'');
+    });
+    return true;
+  }catch(e){console.warn('Wake Lock',e);setWakeStatus('Wake lock unavailable','warn');return false;}
+}
+async function releaseWakeLock(){
+  const lock=state.wakeLock;state.wakeLock=null;
+  if(lock&&!lock.released){try{await lock.release();}catch(e){console.warn('Wake Lock release',e);}}
+  setWakeStatus('Screen sleep allowed');
+}
+
 async function start(){
   if(state.running) return;
-  if(state.library.autoPosition && state.sensors.motionMatch?.matched && state.sensors.motionMatch.confidence>=0.50 && state.sensors.matchCandidate===state.sensors.motionMatch.position && performance.now()-state.sensors.matchCandidateSince>=650) els.position.value=state.sensors.motionMatch.position;
   if(!navigator.mediaDevices?.getUserMedia){ setMicStatus('Microphone unavailable','error'); return; }
   try{
     clearLive({keepSignal:false});
@@ -267,7 +204,7 @@ async function start(){
     const stream=await navigator.mediaDevices.getUserMedia(requestedConstraints(els.inputDevice.value));
     const AC=window.AudioContext||window.webkitAudioContext;
     const context=new AC({latencyHint:'interactive',sampleRate:48000});
-    await context.audioWorklet.addModule('./tick-processor.js?v=0.3.1');
+    await context.audioWorklet.addModule('./tick-processor.js?v=0.4.2');
     await context.resume();
     const source=context.createMediaStreamSource(stream);
     const node=new AudioWorkletNode(context,'watchlabx-tick-processor',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:2,channelCountMode:'max',channelInterpretation:'discrete'});
@@ -275,8 +212,9 @@ async function start(){
     source.connect(node).connect(sink).connect(context.destination);
     node.port.onmessage=onAudioMessage;
     Object.assign(state,{stream,context,source,node,sink,running:true,startedAt:performance.now(),ticks:[],levelHistory:[],latestEvent:null,lockedBph:null,lockedBphConfidence:0,candidateBph:null,candidateStreak:0,bphDetection:null,lastTiming:null,displayRate:null,rateTrail:[],currentReading:null,lastAnalysisWall:0,targetDurationSec:selectedDuration(),finishing:false});
+    await acquireWakeLock();
     applySensitivity(); showTrackSettings(stream.getAudioTracks()[0]);
-    els.startBtn.disabled=true; els.stopBtn.disabled=false; els.saveResultBtn.disabled=true; els.inputDevice.disabled=true; els.refreshDevicesBtn.disabled=true; els.durationSelect.disabled=true; els.position.disabled=true; els.watchSelect.disabled=true;
+    els.startBtn.disabled=true; els.stopBtn.disabled=false; els.saveResultBtn.disabled=true; els.inputDevice.disabled=true; els.refreshDevicesBtn.disabled=true; els.durationSelect.disabled=true; els.position.disabled=true; els.watchSelect.disabled=true; els.saveWatchBtn.disabled=true; els.deleteWatchBtn.disabled=true;
     els.countdownValue.textContent=formatCountdown(state.targetDurationSec); els.timerCaption.textContent='remaining'; els.progressBar.style.width='0%';
     setMicStatus('Microphone active','live'); setQuality('Listening','idle'); els.analysisState.textContent='Listening for a mechanical beat';
     loop();
@@ -288,11 +226,12 @@ async function start(){
 
 async function stop(){
   state.running=false; cancelAnimationFrame(state.raf);
+  await releaseWakeLock();
   try{state.node?.disconnect();}catch{} try{state.source?.disconnect();}catch{} try{state.sink?.disconnect();}catch{}
   state.stream?.getTracks().forEach(t=>t.stop());
   if(state.context&&state.context.state!=='closed') await state.context.close();
   state.stream=state.context=state.source=state.node=state.sink=null;
-  els.startBtn.disabled=false; els.stopBtn.disabled=true; els.inputDevice.disabled=false; els.refreshDevicesBtn.disabled=false; els.durationSelect.disabled=false; els.position.disabled=false; els.watchSelect.disabled=false;
+  els.startBtn.disabled=false; els.stopBtn.disabled=true; els.inputDevice.disabled=false; els.refreshDevicesBtn.disabled=false; els.durationSelect.disabled=false; els.position.disabled=false; els.watchSelect.disabled=false; els.saveWatchBtn.disabled=false; updateDeleteWatchButton();
   setMicStatus('Microphone idle');
   els.analysisState.textContent=state.currentReading?'Stopped — result ready to save':'Stopped';
   updateIdleCountdown();
@@ -528,7 +467,7 @@ function renderWatchSelect(){
   if(prev&&state.library.watches.some(w=>w.id===prev)) els.watchSelect.value=prev; else els.watchSelect.value='';
   loadActiveWatchFields(); renderHistory(); renderPositionSummary(); renderPassport();
 }
-function loadActiveWatchFields(){ const w=activeWatch(); els.watchName.value=w?.name||'';els.watchModel.value=w?.model||'';els.watchMovement.value=w?.movement||'';renderWatchPhotos();renderPassport();renderMagneticResult(); }
+function loadActiveWatchFields(){ const w=activeWatch(); els.watchName.value=w?.name||'';els.watchModel.value=w?.model||'';els.watchMovement.value=w?.movement||'';updateDeleteWatchButton();renderWatchPhotos();renderPassport();renderMagneticResult(); }
 function setPhotoPreview(kind,data){
   const img=kind==='front'?els.frontPhotoPreview:els.backPhotoPreview,empty=kind==='front'?els.frontPhotoEmpty:els.backPhotoEmpty,remove=kind==='front'?els.removeFrontPhotoBtn:els.removeBackPhotoBtn;
   const ok=photoDataUrlOk(data); if(img){img.hidden=!ok; if(ok)img.src=data; else img.removeAttribute('src');} if(empty)empty.hidden=ok; if(remove)remove.disabled=!ok;
@@ -555,11 +494,21 @@ function saveWatchProfile(){
   if(!w){w={id:uid(),name,model:'',movement:'',createdAt:new Date().toISOString(),measurements:[],photos:{}};state.library.watches.unshift(w);state.activeWatchId=w.id;}
   w.name=name;w.model=els.watchModel.value.trim();w.movement=els.watchMovement.value.trim();saveLibrary();renderWatchSelect();renderPassport();showToast('Watch profile saved');return w;
 }
+function updateDeleteWatchButton(){if(els.deleteWatchBtn)els.deleteWatchBtn.disabled=!activeWatch()||state.running;}
+function deleteActiveWatch(){
+  if(state.running){showToast('Stop the measurement before deleting a watch');return;}
+  const w=activeWatch();if(!w)return;
+  const ok=confirm(`Delete “${w.name}” and all of its saved tests, photos and magnetic screenings? This cannot be undone.`);
+  if(!ok)return;
+  state.library.watches=state.library.watches.filter(x=>x.id!==w.id);
+  state.activeWatchId=state.library.watches[0]?.id||null;
+  saveLibrary();renderWatchSelect();showToast('Watch deleted');
+}
 function saveMeasurement({auto=false}={}){
   if(!state.currentReading){if(!auto)showToast('No valid reading to save');return false;}
   let w=state.library.watches.find(x=>x.id===state.activeWatchId)||saveWatchProfile(); if(!w)return false;
   const before=summarizeMeasurements(calibratedMeasurements(w.measurements||[]));
-  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rawRate:+Number(r.rawRate??r.rate).toFixed(2),rate:+r.rate.toFixed(2),calibrationOffset:+Number(r.calibrationOffset||0).toFixed(3),calibrationCount:Number(r.calibrationCount||0),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration()),orientationPosition:state.sensors.motionMatch?.matched&&state.sensors.matchCandidate===state.sensors.motionMatch.position&&performance.now()-state.sensors.matchCandidateSince>=650?state.sensors.motionMatch.position:'',orientationConfidence:state.sensors.motionMatch?.matched?+state.sensors.motionMatch.confidence.toFixed(3):null});
+  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rawRate:+Number(r.rawRate??r.rate).toFixed(2),rate:+r.rate.toFixed(2),calibrationOffset:+Number(r.calibrationOffset||0).toFixed(3),calibrationCount:Number(r.calibrationCount||0),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration())});
   saveLibrary();renderHistory();renderPositionSummary();renderPassport();showToast(`${POSITIONS[r.position]?.short||r.position} ${auto?'saved automatically':'result saved'}`);
   const after=summarizeMeasurements(calibratedMeasurements(w.measurements));
   if(!before.complete&&after.complete) setTimeout(()=>openReport({auto:true}),300);
@@ -653,11 +602,11 @@ function setGuideLanguage(lang){const ar=lang==='ar';els.guideAr.hidden=!ar;els.
 els.startBtn.addEventListener('click',start);els.stopBtn.addEventListener('click',stop);els.resetBtn.addEventListener('click',reset);els.saveResultBtn.addEventListener('click',()=>saveMeasurement());els.durationSelect.addEventListener('change',updateIdleCountdown);
 els.refreshDevicesBtn.addEventListener('click',()=>refreshInputDevices({requestPermission:true}));els.sensitivity.addEventListener('input',applySensitivity);
 els.bphMode.addEventListener('change',()=>{state.lockedBph=null;state.lockedBphConfidence=0;state.candidateBph=null;state.candidateStreak=0;state.node?.port.postMessage({type:'config',minGapSec:.055});});
-els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();renderPassport();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);els.addCalibrationBtn.addEventListener('click',addCalibrationPoint);els.clearCalibrationBtn.addEventListener('click',clearCalibration);els.reportBtn.addEventListener('click',()=>openReport());els.closeReportBtn.addEventListener('click',closeReport);els.printReportBtn.addEventListener('click',printReport);els.downloadReportBtn.addEventListener('click',downloadReport);els.reportModal.querySelector('[data-close-report]')?.addEventListener('click',closeReport);
+els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();renderPassport();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.deleteWatchBtn.addEventListener('click',deleteActiveWatch);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);els.addCalibrationBtn.addEventListener('click',addCalibrationPoint);els.clearCalibrationBtn.addEventListener('click',clearCalibration);els.reportBtn.addEventListener('click',()=>openReport());els.closeReportBtn.addEventListener('click',closeReport);els.printReportBtn.addEventListener('click',printReport);els.downloadReportBtn.addEventListener('click',downloadReport);els.reportModal.querySelector('[data-close-report]')?.addEventListener('click',closeReport);
 els.helpBtn.addEventListener('click',openHelp);els.closeHelpBtn.addEventListener('click',closeHelp);els.helpModal.querySelector('[data-close-help]')?.addEventListener('click',closeHelp);els.guideEnBtn.addEventListener('click',()=>setGuideLanguage('en'));els.guideArBtn.addEventListener('click',()=>setGuideLanguage('ar'));
 els.frontPhotoInput.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)updateWatchPhoto('front',f);e.target.value='';});els.backPhotoInput.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)updateWatchPhoto('back',f);e.target.value='';});els.removeFrontPhotoBtn.addEventListener('click',()=>removeWatchPhoto('front'));els.removeBackPhotoBtn.addEventListener('click',()=>removeWatchPhoto('back'));
-els.enableSensorsBtn.addEventListener('click',enableSensors);els.learnPositionBtn.addEventListener('click',learnSelectedPosition);els.clearOrientationBtn.addEventListener('click',clearOrientationProfiles);els.autoPositionToggle.addEventListener('change',()=>{state.library.autoPosition=els.autoPositionToggle.checked;saveLibrary();showToast(state.library.autoPosition?'Auto position enabled':'Auto position disabled');});els.captureBaselineBtn.addEventListener('click',captureMagBaseline);els.captureWatchFieldBtn.addEventListener('click',captureMagWatch);
-window.addEventListener('resize',drawAll);window.addEventListener('beforeunload',()=>{state.stream?.getTracks().forEach(t=>t.stop());try{state.sensors.magnetometer?.stop();}catch{}});navigator.mediaDevices?.addEventListener?.('devicechange',()=>{if(!state.running)refreshInputDevices();});
+els.enableSensorsBtn.addEventListener('click',enableSensors);els.captureBaselineBtn.addEventListener('click',captureMagBaseline);els.captureWatchFieldBtn.addEventListener('click',captureMagWatch);
+window.addEventListener('resize',drawAll);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&state.running)acquireWakeLock();});window.addEventListener('beforeunload',()=>{state.stream?.getTracks().forEach(t=>t.stop());try{state.wakeLock?.release();}catch{}try{state.sensors.magnetometer?.stop();}catch{}});navigator.mediaDevices?.addEventListener?.('devicechange',()=>{if(!state.running)refreshInputDevices();});
 
-els.secureNote.textContent=window.isSecureContext?'HTTPS secure context • audio stays on this device.':'Open via HTTPS to enable microphone access.';
+els.secureNote.textContent=window.isSecureContext?'HTTPS secure context • audio stays on this device.':'Open via HTTPS to enable microphone access.';setWakeStatus('wakeLock' in navigator?'Screen sleep allowed':'Wake lock unavailable','wakeLock' in navigator?'':'warn');
 refreshInputDevices();renderWatchSelect();renderCalibration();renderPassport();initializeSensorUi();setGuideLanguage('en');updateIdleCountdown();drawAll();

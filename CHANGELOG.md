@@ -1,11 +1,7 @@
-# Changelog
+# WatchLabX v0.4.2 — Manual Positions + Wake Lock + Watch Deletion
 
-## v0.4.1 — Sensor Stability HF
-
-- Replaces single-moment orientation learning with a 2.2 s stable capture window.
-- Uses robust normalized-vector averaging and rejects motion outliers during learning.
-- Stores per-position angular spread (σθ) and sample count.
-- Adds adaptive matching tolerance based on the learned spread of each position.
-- Requires a stable match for ~650 ms before Auto-set position changes DU/DD/CU/CD/CL/CR.
-- Displays live angular stability next to the gravity vector.
-- Keeps the v0.4.0 timing, calibration, report, passport and magnetic-screening logic unchanged.
+- Removed Orientation Assist from the user workflow. DU/DD/CU/CD/CL/CR are selected manually.
+- Sensor Lab now focuses only on experimental magnetic-field screening.
+- Added Screen Wake Lock during active timing tests, with automatic reacquisition when the page becomes visible again.
+- Added Delete watch with confirmation; deleting a watch removes its profile, photos, timing history, and magnetic tests.
+- Kept timing/BPH, calibration, report, Watch Passport, timed auto-save, and magnetic calculations unchanged.
