@@ -1,4 +1,5 @@
-import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.2.2';
+import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.3.0';
+import { weightedCalibration, applyRateCalibration, summarizeMeasurements, assessmentFromSummary } from './report.mjs?v=0.3.0';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -13,7 +14,9 @@ const els = {
   watchSelect:$('watchSelect'), watchName:$('watchName'), watchModel:$('watchModel'), watchMovement:$('watchMovement'), saveWatchBtn:$('saveWatchBtn'),
   positionSummary:$('positionSummary'), historyBody:$('historyBody'), sessionSummary:$('sessionSummary'), exportCsvBtn:$('exportCsvBtn'), clearTestsBtn:$('clearTestsBtn'),
   echoSetting:$('echoSetting'), noiseSetting:$('noiseSetting'), gainSetting:$('gainSetting'), channelSetting:$('channelSetting'), sampleSetting:$('sampleSetting'), deviceSetting:$('deviceSetting'),
-  selectedChannel:$('selectedChannel'), channelLevels:$('channelLevels'), peakNoise:$('peakNoise'), thresholdSetting:$('thresholdSetting'), secureNote:$('secureNote'), toast:$('toast')
+  selectedChannel:$('selectedChannel'), channelLevels:$('channelLevels'), peakNoise:$('peakNoise'), thresholdSetting:$('thresholdSetting'), secureNote:$('secureNote'), toast:$('toast'),
+  calibrationChip:$('calibrationChip'), calibrationStatus:$('calibrationStatus'), calibrationDetail:$('calibrationDetail'), calibrationReference:$('calibrationReference'), addCalibrationBtn:$('addCalibrationBtn'), clearCalibrationBtn:$('clearCalibrationBtn'),
+  reportBtn:$('reportBtn'), reportModal:$('reportModal'), reportContent:$('reportContent'), closeReportBtn:$('closeReportBtn'), printReportBtn:$('printReportBtn'), downloadReportBtn:$('downloadReportBtn')
 };
 
 const POSITIONS = {
@@ -35,9 +38,9 @@ state.activeWatchId = state.library.activeWatchId || null;
 function loadLibrary(){
   try {
     const x=JSON.parse(localStorage.getItem(STORE_KEY)||'null');
-    if (x && Array.isArray(x.watches)) return x;
+    if (x && Array.isArray(x.watches)) { x.calibrationSamples = Array.isArray(x.calibrationSamples) ? x.calibrationSamples : []; return x; }
   } catch {}
-  return {watches:[],activeWatchId:null};
+  return {watches:[],activeWatchId:null,calibrationSamples:[]};
 }
 function saveLibrary(){
   state.library.activeWatchId=state.activeWatchId;
@@ -48,6 +51,10 @@ function fmtBool(v){ return v===true?'On':v===false?'Off':'Not reported'; }
 function dbfs(v){ return 20*Math.log10(Math.max(1e-9,v)); }
 function shortDb(v){ return `${dbfs(v).toFixed(1)} dBFS`; }
 function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function currentCalibration(){ return weightedCalibration(state.library.calibrationSamples||[]); }
+function calibrationUncertainty(cal){ if(!cal?.count) return 0; if(cal.count===1) return 5; if(cal.count===2) return Math.max(2,Number(cal.spread)||2); return Math.max(.3,Number(cal.spread)||0); }
+function calibratedRate(raw){ return applyRateCalibration(raw,currentCalibration()); }
+function escapeHtml(v){ return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function showToast(msg){ els.toast.textContent=msg; els.toast.classList.add('show'); clearTimeout(showToast.t); showToast.t=setTimeout(()=>els.toast.classList.remove('show'),2200); }
 function setMicStatus(text,kind='idle'){ els.micStatus.textContent=text; els.micDot.className=`dot ${kind}`; }
 function setQuality(text,kind='idle'){ els.qualityBadge.textContent=text; els.qualityBadge.className=`quality-badge ${kind}`; }
@@ -94,7 +101,7 @@ async function start(){
     const stream=await navigator.mediaDevices.getUserMedia(requestedConstraints(els.inputDevice.value));
     const AC=window.AudioContext||window.webkitAudioContext;
     const context=new AC({latencyHint:'interactive',sampleRate:48000});
-    await context.audioWorklet.addModule('./tick-processor.js?v=0.2.2');
+    await context.audioWorklet.addModule('./tick-processor.js?v=0.3.0');
     await context.resume();
     const source=context.createMediaStreamSource(stream);
     const node=new AudioWorkletNode(context,'watchlabx-tick-processor',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:2,channelCountMode:'max',channelInterpretation:'discrete'});
@@ -284,12 +291,15 @@ function updateAnalysis(){
   if(preview){
     const alpha=state.displayRate==null?1:(stable?0.20:0.32);
     state.displayRate=state.displayRate==null?timing.rate:(1-alpha)*state.displayRate+alpha*timing.rate;
-    state.rateTrail.push({t:performance.now(),rate:state.displayRate}); if(state.rateTrail.length>80) state.rateTrail.shift();
-    els.rateValue.textContent=`${state.displayRate>=0?'+':''}${state.displayRate.toFixed(1)}`;
-    els.rateUncertainty.textContent=`±${timing.rateUncertainty.toFixed(1)} s/day`;
+    const cal=currentCalibration();
+    const corrected=applyRateCalibration(state.displayRate,cal);
+    const combinedUncertainty=Math.sqrt(timing.rateUncertainty*timing.rateUncertainty + calibrationUncertainty(cal)*calibrationUncertainty(cal));
+    state.rateTrail.push({t:performance.now(),rate:corrected}); if(state.rateTrail.length>80) state.rateTrail.shift();
+    els.rateValue.textContent=`${corrected>=0?'+':''}${corrected.toFixed(1)}`;
+    els.rateUncertainty.textContent=cal.count?`raw ${state.displayRate>=0?'+':''}${state.displayRate.toFixed(1)} • cal ${cal.offset>=0?'+':''}${cal.offset.toFixed(1)} • ±${combinedUncertainty.toFixed(1)}`:`raw • ±${timing.rateUncertainty.toFixed(1)} s/day`;
     els.jitterValue.textContent=timing.jitterRms.toFixed(2);
     els.alternationValue.textContent=`${timing.alternationMs.toFixed(2)} ms`;
-    state.currentReading={rate:state.displayRate,bph,jitter:timing.jitterRms,alternation:timing.alternationMs,signal:sig,confidence:Math.min(1,(timing.confidence+bphC)/2),uncertainty:timing.rateUncertainty,duration:timing.duration,position:els.position.value};
+    state.currentReading={rawRate:state.displayRate,rate:corrected,calibrationOffset:cal.offset,calibrationCount:cal.count,bph,jitter:timing.jitterRms,alternation:timing.alternationMs,signal:sig,confidence:Math.min(1,(timing.confidence+bphC)/2),uncertainty:combinedUncertainty,duration:timing.duration,position:els.position.value};
     els.saveResultBtn.disabled=false;
     if(stable){setQuality('Stable','good');els.analysisState.textContent='Stable estimate — ready to save';}
     else {setQuality('Quick result','acquiring');els.analysisState.textContent='Quick result — keep measuring for higher confidence';}
@@ -326,7 +336,7 @@ function drawGauge(){
   segs.forEach(([lo,hi,col])=>{ctx.strokeStyle=col;ctx.beginPath();ctx.arc(cx,cy,r,angle(lo),angle(hi));ctx.stroke();});
   ctx.lineWidth=1*dpr;ctx.strokeStyle='rgba(255,255,255,.25)';ctx.fillStyle='rgba(210,220,238,.8)';ctx.font=`${11*dpr}px system-ui`;ctx.textAlign='center';ctx.textBaseline='middle';
   [-60,-30,-15,-5,0,5,15,30,60].forEach(v=>{const a=angle(v),ri=r-18*dpr,ro=r+4*dpr;ctx.beginPath();ctx.moveTo(cx+ri*Math.cos(a),cy+ri*Math.sin(a));ctx.lineTo(cx+ro*Math.cos(a),cy+ro*Math.sin(a));ctx.stroke();const rt=r-38*dpr;ctx.fillText(v>0?`+${v}`:`${v}`,cx+rt*Math.cos(a),cy+rt*Math.sin(a));});
-  const rate=state.displayRate;
+  const rate=Number.isFinite(state.displayRate)?calibratedRate(state.displayRate):null;
   if(Number.isFinite(rate)){
     const a=angle(rate);ctx.strokeStyle='#7ddcff';ctx.lineWidth=3*dpr;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(cx+(r-25*dpr)*Math.cos(a),cy+(r-25*dpr)*Math.sin(a));ctx.stroke();ctx.fillStyle='#7ddcff';ctx.beginPath();ctx.arc(cx,cy,6*dpr,0,Math.PI*2);ctx.fill();
     state.rateTrail.slice(-24).forEach((p,i)=>{const aa=angle(p.rate),rr=r-8*dpr;ctx.fillStyle=`rgba(159,140,255,${0.15+0.7*i/24})`;ctx.beginPath();ctx.arc(cx+rr*Math.cos(aa),cy+rr*Math.sin(aa),2.2*dpr,0,Math.PI*2);ctx.fill();});
@@ -362,9 +372,15 @@ function saveWatchProfile(){
 function saveMeasurement({auto=false}={}){
   if(!state.currentReading){if(!auto)showToast('No valid reading to save');return false;}
   let w=state.library.watches.find(x=>x.id===state.activeWatchId)||saveWatchProfile(); if(!w)return false;
-  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rate:+r.rate.toFixed(2),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration())});saveLibrary();renderHistory();renderPositionSummary();showToast(`${POSITIONS[r.position]?.short||r.position} ${auto?'saved automatically':'result saved'}`);return true;
+  const before=summarizeMeasurements(calibratedMeasurements(w.measurements||[]));
+  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rawRate:+Number(r.rawRate??r.rate).toFixed(2),rate:+r.rate.toFixed(2),calibrationOffset:+Number(r.calibrationOffset||0).toFixed(3),calibrationCount:Number(r.calibrationCount||0),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration())});
+  saveLibrary();renderHistory();renderPositionSummary();showToast(`${POSITIONS[r.position]?.short||r.position} ${auto?'saved automatically':'result saved'}`);
+  const after=summarizeMeasurements(calibratedMeasurements(w.measurements));
+  if(!before.complete&&after.complete) setTimeout(()=>openReport({auto:true}),300);
+  return true;
 }
-function measurementsForActive(){return state.library.watches.find(x=>x.id===state.activeWatchId)?.measurements||[];}
+function calibratedMeasurements(ms=[]){const cal=currentCalibration();return ms.map(m=>({...m,rawRate:Number(m.rawRate??m.rate),rate:applyRateCalibration(Number(m.rawRate??m.rate),cal),calibrationOffset:cal.offset,calibrationCount:cal.count}));}
+function measurementsForActive(){const ms=state.library.watches.find(x=>x.id===state.activeWatchId)?.measurements||[];return calibratedMeasurements(ms);}
 function renderPositionSummary(){
   const ms=measurementsForActive(); els.positionSummary.innerHTML=''; const latest={}; ms.forEach(m=>{if(!latest[m.position])latest[m.position]=m;});
   Object.entries(POSITIONS).forEach(([k,p])=>{const m=latest[k];const el=document.createElement('button');el.type='button';const sev=m?(Math.abs(m.rate)<=5?'good':Math.abs(m.rate)<=15?'warn':'bad'):'';el.className=`pos-card ${m?'has-data':''} ${sev}`;el.innerHTML=`<span>${p.short}</span><small>${p.label}</small><strong>${m?`${m.rate>=0?'+':''}${m.rate.toFixed(1)}`:'—'}</strong><em>${m?'s/day':'not tested'}</em>`;el.addEventListener('click',()=>{els.position.value=k;showToast(`Position set to ${p.label}`);});els.positionSummary.appendChild(el);});
@@ -373,21 +389,81 @@ function renderPositionSummary(){
 }
 function renderHistory(){
   const ms=measurementsForActive().slice(0,30);els.historyBody.innerHTML='';if(!ms.length){els.historyBody.innerHTML='<div class="empty-history">No saved tests for this watch.</div>';return;}
-  ms.forEach(m=>{const row=document.createElement('div');row.className=`history-row ${Math.abs(m.rate)<=5?'good':Math.abs(m.rate)<=15?'warn':'bad'}`;const d=new Date(m.timestamp);row.innerHTML=`<div><b>${POSITIONS[m.position]?.short||m.position}</b><span>${d.toLocaleString()}</span></div><strong>${m.rate>=0?'+':''}${m.rate.toFixed(1)} <small>s/day</small></strong><span>${m.bph.toLocaleString()} BPH</span><span>jitter ${m.jitter.toFixed(2)} ms</span><button type="button" aria-label="Delete result">×</button>`;row.querySelector('button').addEventListener('click',()=>{const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(w){w.measurements=w.measurements.filter(x=>x.id!==m.id);saveLibrary();renderHistory();renderPositionSummary();}});els.historyBody.appendChild(row);});
+  ms.forEach(m=>{const row=document.createElement('div');row.className=`history-row ${Math.abs(m.rate)<=5?'good':Math.abs(m.rate)<=15?'warn':'bad'}`;const d=new Date(m.timestamp);row.innerHTML=`<div><b>${POSITIONS[m.position]?.short||m.position}</b><span>${d.toLocaleString()}</span></div><strong>${m.rate>=0?'+':''}${m.rate.toFixed(1)} <small>s/day</small></strong><span>${m.bph.toLocaleString()} BPH</span><span>jitter ${m.jitter.toFixed(2)} ms</span><span class="history-raw">raw ${Number(m.rawRate??m.rate)>=0?'+':''}${Number(m.rawRate??m.rate).toFixed(1)}</span><button type="button" aria-label="Delete result">×</button>`;row.querySelector('button').addEventListener('click',()=>{const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(w){w.measurements=w.measurements.filter(x=>x.id!==m.id);saveLibrary();renderHistory();renderPositionSummary();}});els.historyBody.appendChild(row);});
 }
 function exportCsv(){
   const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w||!w.measurements?.length){showToast('No saved tests to export');return;}
-  const rows=[['watch','model','movement','timestamp','position','rate_s_day','bph','jitter_ms','alternation_ms','signal_pct','confidence','uncertainty_s_day','duration_s','test_duration_s']];
-  w.measurements.slice().reverse().forEach(m=>rows.push([w.name,w.model||'',w.movement||'',m.timestamp,m.position,m.rate,m.bph,m.jitter,m.alternation,m.signal,m.confidence,m.uncertainty,m.duration,m.testDuration||'']));
+  const cal=currentCalibration();const rows=[['watch','model','movement','timestamp','position','raw_rate_s_day','calibrated_rate_s_day','calibration_offset_s_day','bph','jitter_ms','alternation_ms','signal_pct','confidence','uncertainty_s_day','duration_s','test_duration_s']];
+  calibratedMeasurements(w.measurements).slice().reverse().forEach(m=>rows.push([w.name,w.model||'',w.movement||'',m.timestamp,m.position,m.rawRate,m.rate,cal.offset,m.bph,m.jitter,m.alternation,m.signal,m.confidence,m.uncertainty,m.duration,m.testDuration||'']));
   const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`WatchLabX-${w.name.replace(/[^a-z0-9_-]+/gi,'_')}.csv`;a.click();URL.revokeObjectURL(url);
 }
 function clearTests(){const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w||!w.measurements?.length)return;if(confirm(`Delete all saved tests for ${w.name}?`)){w.measurements=[];saveLibrary();renderHistory();renderPositionSummary();}}
 
+function renderCalibration(){
+  const cal=currentCalibration();
+  if(!cal.count){els.calibrationStatus.textContent='Uncalibrated';els.calibrationDetail.textContent='No rate correction is applied. BPH detection is unaffected.';els.calibrationChip.textContent='Rate uncalibrated';els.calibrationChip.className='cal-chip';return;}
+  const spread=Number.isFinite(cal.spread)?` • spread ${cal.spread.toFixed(1)}`:'';
+  const label=cal.status==='good'?'Calibrated':cal.status==='inconsistent'?'Check calibration':'Provisional';
+  els.calibrationStatus.textContent=`${label} • ${cal.offset>=0?'+':''}${cal.offset.toFixed(2)} s/day`;
+  els.calibrationDetail.textContent=`${cal.count} reference point${cal.count===1?'':'s'}${spread} s/day. Current rate display includes this correction.`;
+  els.calibrationChip.textContent=`Cal ${cal.offset>=0?'+':''}${cal.offset.toFixed(1)}`;
+  els.calibrationChip.className=`cal-chip ${cal.status}`;
+}
+
+function addCalibrationPoint(){
+  if(!state.currentReading||!Number.isFinite(Number(state.currentReading.rawRate))){showToast('Take a stable reading first');return;}
+  const ref=Number(els.calibrationReference.value);
+  if(!Number.isFinite(ref)||Math.abs(ref)>600){showToast('Enter a trusted reference rate in s/day');return;}
+  if(Number(state.currentReading.duration||0)<7.5||Number(state.currentReading.uncertainty||999)>15){showToast('Use a stable 8+ second reading for calibration');return;}
+  const sample={id:uid(),timestamp:new Date().toISOString(),watchId:state.activeWatchId||null,position:state.currentReading.position,rawRate:Number(state.currentReading.rawRate),referenceRate:ref,confidence:Number(state.currentReading.confidence||.5),uncertainty:Number(state.currentReading.uncertainty||6)};
+  state.library.calibrationSamples=state.library.calibrationSamples||[];
+  state.library.calibrationSamples.unshift(sample);
+  state.library.calibrationSamples=state.library.calibrationSamples.slice(0,20);
+  saveLibrary();renderCalibration();renderHistory();renderPositionSummary();
+  els.calibrationReference.value='';showToast('Calibration point added');
+}
+
+function clearCalibration(){
+  if(!(state.library.calibrationSamples||[]).length)return;
+  if(confirm('Clear all WatchLabX rate calibration points on this device?')){state.library.calibrationSamples=[];saveLibrary();renderCalibration();renderHistory();renderPositionSummary();showToast('Rate calibration cleared');}
+}
+
+function reportPositionName(p){return POSITIONS[p]?.label||p;}
+function reportRate(v){return Number.isFinite(Number(v))?`${Number(v)>=0?'+':''}${Number(v).toFixed(1)}`:'—';}
+function getReportData(){
+  const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w)return null;
+  const ms=calibratedMeasurements(w.measurements||[]);const summary=summarizeMeasurements(ms);const cal=currentCalibration();return {w,summary,cal,assessment:assessmentFromSummary(summary)};
+}
+function reportMarkup(data){
+  const {w,summary,cal,assessment}=data;const now=new Date();
+  const rows=summary.rows.map(m=>`<tr><td>${escapeHtml(POSITIONS[m.position]?.short||m.position)}</td><td>${escapeHtml(reportPositionName(m.position))}</td><td>${reportRate(m.rate)}</td><td>${reportRate(m.rawRate)}</td><td>${Number(m.bph).toLocaleString()}</td><td>${Number(m.jitter).toFixed(2)}</td><td>${Math.round(Number(m.signal))}%</td><td>${Math.round(Number(m.confidence)*100)}%</td></tr>`).join('');
+  const calText=cal.count?`${cal.status} • ${cal.offset>=0?'+':''}${cal.offset.toFixed(2)} s/day • ${cal.count} point${cal.count===1?'':'s'}${Number.isFinite(cal.spread)?` • spread ${cal.spread.toFixed(2)}`:''}`:'Uncalibrated — rate values are raw acoustic estimates.';
+  return `<article class="report-document">
+    <header><div><span>WATCHLABX TIMING REPORT</span><h3>${escapeHtml(w.name)}</h3><p>${escapeHtml([w.model,w.movement].filter(Boolean).join(' • ')||'Mechanical watch')}</p></div><div class="report-sign">Dr.Eidan</div></header>
+    <div class="report-meta"><span>${now.toLocaleString()}</span><span>${summary.count}/6 positions</span><span>${summary.complete?'Complete six-position set':'Partial set'}</span></div>
+    <section class="report-kpis"><div><small>Mean rate</small><strong>${reportRate(summary.meanRate)}</strong><span>s/day</span></div><div><small>Positional Δ</small><strong>${Number.isFinite(summary.positionalDelta)?summary.positionalDelta.toFixed(1):'—'}</strong><span>s/day</span></div><div><small>Mean jitter</small><strong>${Number.isFinite(summary.meanJitter)?summary.meanJitter.toFixed(2):'—'}</strong><span>ms RMS</span></div><div><small>BPH</small><strong>${Number.isFinite(summary.dominantBph)?Number(summary.dominantBph).toLocaleString():'—'}</strong><span>dominant</span></div></section>
+    <section class="report-cal"><b>Rate calibration</b><p>${escapeHtml(calText)}</p></section>
+    <div class="report-table-wrap"><table><thead><tr><th>Pos.</th><th>Position</th><th>Rate</th><th>Raw</th><th>BPH</th><th>Jitter</th><th>Signal</th><th>Conf.</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <section class="report-assessment ${assessment.tone}"><b>${escapeHtml(assessment.headline)}</b><ul>${assessment.notes.map(n=>`<li>${escapeHtml(n)}</li>`).join('')}</ul></section>
+    <section class="report-foot"><p><b>Interpretation note:</b> WatchLabX is a browser-based acoustic timing tool. Calibration corrects a device-specific rate offset only when referenced to a trusted rate source. Tick/Tock Δ remains experimental and is not reported as certified beat error. Results should be repeated when signal or confidence is low.</p></section>
+  </article>`;
+}
+function openReport({auto=false}={}){
+  const data=getReportData();if(!data||!data.summary.count){showToast('No saved tests to report');return;}
+  els.reportContent.innerHTML=reportMarkup(data);els.reportModal.hidden=false;document.body.classList.add('report-open');
+  if(auto)showToast('Six positions complete — report ready');
+}
+function closeReport(){els.reportModal.hidden=true;document.body.classList.remove('report-open');}
+function printReport(){window.print();}
+function downloadReport(){
+  const data=getReportData();if(!data)return;const body=reportMarkup(data);const css=`body{font-family:Arial,sans-serif;color:#152033;margin:32px}article{max-width:900px;margin:auto}header{display:flex;justify-content:space-between;border-bottom:2px solid #17243a;padding-bottom:16px}.report-sign{font-style:italic;font-size:24px}.report-meta,.report-kpis{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.report-kpis div{border:1px solid #ccd4df;border-radius:12px;padding:12px;min-width:130px}.report-kpis strong{display:block;font-size:24px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}.report-cal,.report-assessment,.report-foot{margin:16px 0;padding:12px;border:1px solid #d9e0e9;border-radius:10px}small,span,p{color:#526176}`;const html=`<!doctype html><meta charset="utf-8"><title>WatchLabX Report - ${escapeHtml(data.w.name)}</title><style>${css}</style>${body}`;const blob=new Blob([html],{type:'text/html'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`WatchLabX-Report-${data.w.name.replace(/[^a-z0-9_-]+/gi,'_')}.html`;a.click();URL.revokeObjectURL(url);
+}
+
 els.startBtn.addEventListener('click',start);els.stopBtn.addEventListener('click',stop);els.resetBtn.addEventListener('click',reset);els.saveResultBtn.addEventListener('click',()=>saveMeasurement());els.durationSelect.addEventListener('change',updateIdleCountdown);
 els.refreshDevicesBtn.addEventListener('click',()=>refreshInputDevices({requestPermission:true}));els.sensitivity.addEventListener('input',applySensitivity);
 els.bphMode.addEventListener('change',()=>{state.lockedBph=null;state.lockedBphConfidence=0;state.candidateBph=null;state.candidateStreak=0;state.node?.port.postMessage({type:'config',minGapSec:.055});});
-els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);
+els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);els.addCalibrationBtn.addEventListener('click',addCalibrationPoint);els.clearCalibrationBtn.addEventListener('click',clearCalibration);els.reportBtn.addEventListener('click',()=>openReport());els.closeReportBtn.addEventListener('click',closeReport);els.printReportBtn.addEventListener('click',printReport);els.downloadReportBtn.addEventListener('click',downloadReport);els.reportModal.querySelector('[data-close-report]')?.addEventListener('click',closeReport);
 window.addEventListener('resize',drawAll);window.addEventListener('beforeunload',()=>state.stream?.getTracks().forEach(t=>t.stop()));navigator.mediaDevices?.addEventListener?.('devicechange',()=>{if(!state.running)refreshInputDevices();});
 
 els.secureNote.textContent=window.isSecureContext?'HTTPS secure context • audio stays on this device.':'Open via HTTPS to enable microphone access.';
-refreshInputDevices();renderWatchSelect();updateIdleCountdown();drawAll();
+refreshInputDevices();renderWatchSelect();renderCalibration();updateIdleCountdown();drawAll();

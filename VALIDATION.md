@@ -1,13 +1,15 @@
-# WatchLabX v0.2.2 Validation
+# WatchLabX v0.3.0 Validation
 
-Automated checks run before packaging:
+Automated regression tests executed locally:
 
-- PASS — original WatchLabX core/robustness tests
+- PASS — baseline core/robustness/sensitivity tests
 - PASS — multi-impulse and triple-impulse recurrence tests
 - PASS — v0.2.0 fast/robust timing tests
 - PASS — v0.2.1 mobile timer/UI consistency tests
-- PASS — v0.2.2 harmonic-discrimination tests for 28,800 BPH with missed beats, false lead events, and 1/2/3 acoustic impulses per mechanical beat
-- PASS — all standard BPH candidates: 14,400; 18,000; 19,800; 21,600; 25,200; 28,800; 36,000; 43,200
-- PASS — static regression check that the old irreversible first-lock logic is absent
+- PASS — v0.2.2 BPH harmonic-discrimination and standard-rate tests
+- PASS — v0.3.0 weighted calibration math
+- PASS — v0.3.0 calibrated-rate application
+- PASS — v0.3.0 six-position summary statistics
+- PASS — v0.3.0 calibration/report DOM integration
 
-Real-device validation on the user's phone remains the deciding test because microphone acoustics are device-dependent.
+Scientific note: automated tests verify software behavior against synthetic timing data. Absolute real-device rate accuracy still requires experimental validation against a trusted timing reference on the actual phone/browser combination.

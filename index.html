@@ -7,14 +7,15 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>WatchLabX — Mobile Timegrapher</title>
-  <link rel="stylesheet" href="./styles.css?v=0.2.2" />
+  <link rel="stylesheet" href="./styles.css?v=0.3.0" />
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div>
         <p class="eyebrow">MECHANICAL WATCH ANALYZER</p>
-        <h1>WatchLabX <span>v0.2.2</span></h1>
+        <h1>WatchLabX <span>v0.3.0</span></h1>
+        <div class="author-signature" aria-label="Created by Dr. Eidan">Dr.Eidan</div>
       </div>
       <div class="mic-pill"><span id="micDot" class="dot idle"></span><span id="micStatus">Microphone idle</span></div>
     </header>
@@ -76,7 +77,7 @@
         <button id="saveResultBtn" class="save" type="button" disabled>Save</button>
         <button id="resetBtn" class="ghost" type="button">Reset</button>
       </div>
-      <div class="micro-meta"><span id="elapsed">0.0 s</span><span id="eventCount">0 events</span><span id="sampleRate">— Hz</span></div>
+      <div class="micro-meta"><span id="elapsed">0.0 s</span><span id="eventCount">0 events</span><span id="sampleRate">— Hz</span><span id="calibrationChip" class="cal-chip">Rate uncalibrated</span></div>
     </section>
 
     <section class="card plot-card">
@@ -85,7 +86,7 @@
     </section>
 
     <section class="card positions-card">
-      <div class="section-head"><div><p class="eyebrow">POSITION TEST</p><h2>Saved positions</h2></div><span id="sessionSummary">No saved position tests yet</span></div>
+      <div class="section-head"><div><p class="eyebrow">POSITION TEST</p><h2>Saved positions</h2></div><div class="section-actions"><span id="sessionSummary">No saved position tests yet</span><button id="reportBtn" type="button" class="report-btn">Report</button></div></div>
       <div id="positionSummary" class="position-summary"></div>
     </section>
 
@@ -112,6 +113,24 @@
       </div>
     </details>
 
+
+    <details class="card calibration-card">
+      <summary><span><b>Rate calibration</b><small>Correct phone/audio-clock rate bias using a trusted reference</small></span></summary>
+      <div class="calibration-grid">
+        <div class="cal-status">
+          <span>Status</span>
+          <strong id="calibrationStatus">Uncalibrated</strong>
+          <small id="calibrationDetail">BPH detection is independent; rate correction is not yet applied.</small>
+        </div>
+        <label>Trusted reference rate (s/day)
+          <input id="calibrationReference" type="number" step="0.1" inputmode="decimal" placeholder="e.g. +1.5" />
+        </label>
+        <button id="addCalibrationBtn" type="button" class="save">Use current reading</button>
+        <button id="clearCalibrationBtn" type="button" class="ghost">Clear calibration</button>
+      </div>
+      <p class="calibration-note">For a meaningful calibration, measure the same watch and position with a trusted timegrapher or a verified long-duration reference, then enter that reference rate while WatchLabX has a stable reading. Three calibration points are recommended.</p>
+    </details>
+
     <section class="card history-card">
       <div class="section-head"><div><p class="eyebrow">HISTORY</p><h2>Saved tests</h2></div><div class="mini-actions"><button id="exportCsvBtn" type="button">CSV</button><button id="clearTestsBtn" type="button">Clear</button></div></div>
       <div id="historyBody" class="history-body"></div>
@@ -132,9 +151,24 @@
     </details>
 
     <section class="card notes"><b>Timed tests:</b> the selected test time counts down automatically. At zero, WatchLabX stops the microphone and automatically saves the latest valid result to the selected watch and position. If no valid result exists, nothing is saved.</section>
-    <footer><span>WatchLabX • audio processed locally</span><span id="secureNote"></span></footer>
+    <footer><span>WatchLabX • audio processed locally</span><span class="footer-credit">Designed & developed by <b>Dr.Eidan</b></span><span id="secureNote"></span></footer>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="./app.mjs?v=0.2.2"></script>
+  <div id="reportModal" class="report-modal" hidden>
+    <div class="report-backdrop" data-close-report></div>
+    <section class="report-sheet" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+      <div class="report-toolbar">
+        <div><p class="eyebrow">WATCH REPORT</p><h2 id="reportTitle">WatchLabX Timing Report</h2></div>
+        <button id="closeReportBtn" type="button" class="ghost">Close</button>
+      </div>
+      <div id="reportContent" class="report-content"></div>
+      <div class="report-actions">
+        <button id="printReportBtn" type="button" class="primary">Print / Save PDF</button>
+        <button id="downloadReportBtn" type="button" class="save">Download HTML</button>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="./app.mjs?v=0.3.0"></script>
 </body>
 </html>
