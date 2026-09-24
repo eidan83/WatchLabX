@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+  <meta name="theme-color" content="#070b14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>WatchLabX Mobile — Mechanical Watch Analyzer</title>
+  <link rel="stylesheet" href="./styles.css?v=mobile1" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <p class="eyebrow">MECHANICAL WATCH ANALYZER</p>
+        <h1>WatchLabX <span>v0.1.3 Mobile</span></h1>
+        <p class="subtitle">Acoustic timing analysis • mobile-first interface</p>
+      </div>
+      <div class="status-wrap" aria-live="polite">
+        <span id="micDot" class="dot idle"></span>
+        <span id="micStatus">Microphone idle</span>
+      </div>
+    </header>
+
+    <section class="placement-card card">
+      <div class="placement-icon" aria-hidden="true">⌁</div>
+      <div>
+        <strong>Place the watch close to a phone microphone</strong>
+        <span>Start near the lower edge. If the signal is weak, rotate the phone and try the upper edge. The browser may expose the phone microphone array as one logical input.</span>
+      </div>
+    </section>
+
+    <section class="metrics" aria-label="Live measurement">
+      <article class="metric card accent primary-metric">
+        <p>RATE</p>
+        <strong id="rateValue">—</strong>
+        <span>s/day</span>
+      </article>
+      <article class="metric card primary-metric">
+        <p>BPH</p>
+        <strong id="bphValue">—</strong>
+        <span id="bphConfidence">waiting</span>
+      </article>
+      <article class="metric card">
+        <p>BEAT JITTER</p>
+        <strong id="jitterValue">—</strong>
+        <span>ms RMS</span>
+      </article>
+      <article class="metric card">
+        <p>SIGNAL</p>
+        <strong id="signalValue">—</strong>
+        <span id="signalLabel">idle</span>
+      </article>
+    </section>
+
+    <section class="controls card">
+      <div class="control-row compact-row">
+        <div class="control-group">
+          <label for="bphMode">Nominal BPH</label>
+          <select id="bphMode">
+            <option value="auto">Auto detect</option>
+            <option value="14400">14,400</option>
+            <option value="18000">18,000</option>
+            <option value="19800">19,800</option>
+            <option value="21600">21,600</option>
+            <option value="25200">25,200</option>
+            <option value="28800">28,800</option>
+            <option value="36000">36,000</option>
+            <option value="43200">43,200</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="position">Position</label>
+          <select id="position">
+            <option value="CH">CH / Dial up</option>
+            <option value="FH">FH / Dial down</option>
+            <option value="3H">3H</option>
+            <option value="6H">6H</option>
+            <option value="9H">9H</option>
+            <option value="12H">12H</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="control-group sensitivity full-row">
+        <label for="sensitivity">Sensitivity <span id="sensitivityValue">5.0×</span></label>
+        <input id="sensitivity" type="range" min="2.5" max="10" value="5" step="0.1" />
+      </div>
+
+      <details class="advanced-inputs full-row">
+        <summary>Microphone selection</summary>
+        <div class="advanced-content">
+          <div class="control-group grow">
+            <label for="inputDevice">Input device</label>
+            <select id="inputDevice">
+              <option value="">System default microphone</option>
+            </select>
+          </div>
+          <button id="refreshDevicesBtn" class="ghost compact" type="button">Refresh inputs</button>
+        </div>
+      </details>
+
+      <div class="action-row full-row">
+        <button id="startBtn" class="primary">Start</button>
+        <button id="stopBtn" class="secondary" disabled>Stop</button>
+        <button id="resetBtn" class="ghost">Reset</button>
+      </div>
+    </section>
+
+    <section class="plot-grid">
+      <article class="card plot-card wide">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">LIVE</p>
+            <h2>Timegrapher</h2>
+          </div>
+          <span id="eventCount" class="pill">0 beats</span>
+        </div>
+        <canvas id="timegrapher" width="1200" height="350"></canvas>
+        <div class="plot-foot"><span>Older</span><span>Timing residual (ms)</span><span>Now</span></div>
+      </article>
+
+      <article class="card plot-card level-card">
+        <div class="card-head">
+          <div>
+            <p class="eyebrow">MICROPHONE</p>
+            <h2>Acoustic level</h2>
+          </div>
+          <span id="sampleRate" class="pill">— Hz</span>
+        </div>
+        <canvas id="levelPlot" width="600" height="350"></canvas>
+      </article>
+    </section>
+
+    <details class="card fold-panel" open>
+      <summary>Measurement details</summary>
+      <div class="fold-body details">
+        <dl>
+          <div><dt>Elapsed</dt><dd id="elapsed">0.0 s</dd></div>
+          <div><dt>Detected acoustic events</dt><dd id="beatsStat">0</dd></div>
+          <div><dt>Recent event rate</dt><dd id="eventRateStat">—</dd></div>
+          <div><dt>Pattern lock</dt><dd id="patternLockStat">—</dd></div>
+          <div><dt>Mean beat period</dt><dd id="periodStat">—</dd></div>
+          <div><dt>Rate uncertainty</dt><dd id="rateUncertainty">—</dd></div>
+          <div><dt>Position</dt><dd id="positionStat">CH</dd></div>
+          <div><dt>Analysis state</dt><dd id="analysisState">Waiting</dd></div>
+        </dl>
+      </div>
+    </details>
+
+    <details class="card fold-panel">
+      <summary>Audio diagnostics</summary>
+      <div class="fold-body details">
+        <dl>
+          <div><dt>Echo cancellation</dt><dd id="echoSetting">—</dd></div>
+          <div><dt>Noise suppression</dt><dd id="noiseSetting">—</dd></div>
+          <div><dt>Auto gain control</dt><dd id="gainSetting">—</dd></div>
+          <div><dt>Channels</dt><dd id="channelSetting">—</dd></div>
+          <div><dt>Sample rate</dt><dd id="sampleSetting">—</dd></div>
+          <div><dt>Input device</dt><dd id="deviceSetting">—</dd></div>
+          <div><dt>Selected event channel</dt><dd id="selectedChannel">—</dd></div>
+          <div><dt>L / R RMS</dt><dd id="channelLevels">—</dd></div>
+          <div><dt>Peak / noise</dt><dd id="peakNoise">—</dd></div>
+          <div><dt>Detection threshold</dt><dd id="thresholdSetting">—</dd></div>
+          <div><dt>Raw-audio confidence</dt><dd id="rawConfidence">—</dd></div>
+        </dl>
+      </div>
+    </details>
+
+    <section class="card notes">
+      <strong>Mobile build:</strong>
+      <span>The analysis engine is unchanged from the original v0.1.3 baseline. This build changes presentation only: portrait layout, touch-sized controls and a compact single-screen measurement flow.</span>
+    </section>
+
+    <footer>
+      <span>WatchLabX • local processing only • no audio upload</span>
+      <span id="secureNote">Phone microphone access requires HTTPS (or localhost on the phone itself).</span>
+    </footer>
+  </main>
+
+  <script type="module" src="./app.mjs?v=0.1.3-mobile1"></script>
+</body>
+</html>
