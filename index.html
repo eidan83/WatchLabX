@@ -3,76 +3,77 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
-  <meta name="theme-color" content="#08111f" />
+  <meta name="theme-color" content="#07101d" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>WatchLabX — Mobile Timegrapher</title>
-  <link rel="stylesheet" href="./styles.css?v=0.2.0" />
+  <link rel="stylesheet" href="./styles.css?v=0.2.1" />
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div>
         <p class="eyebrow">MECHANICAL WATCH ANALYZER</p>
-        <h1>WatchLabX <span>v0.2.0</span></h1>
-        <p class="subtitle">Fast mobile timing • saved position tests</p>
+        <h1>WatchLabX <span>v0.2.1</span></h1>
       </div>
       <div class="mic-pill"><span id="micDot" class="dot idle"></span><span id="micStatus">Microphone idle</span></div>
     </header>
 
-    <section class="card watch-card">
-      <div class="section-head"><div><p class="eyebrow">WATCH</p><h2>Watch profile</h2></div><select id="watchSelect"><option value="">+ New watch</option></select></div>
-      <div class="watch-fields">
-        <label>Name<input id="watchName" type="text" placeholder="e.g. Hamilton Khaki" autocomplete="off" /></label>
-        <label>Model<input id="watchModel" type="text" placeholder="Model / reference" autocomplete="off" /></label>
-        <label>Movement<input id="watchMovement" type="text" placeholder="e.g. ETA 2824-2" autocomplete="off" /></label>
-        <button id="saveWatchBtn" type="button" class="ghost">Save profile</button>
-      </div>
-    </section>
-
-    <section class="hero-grid">
-      <article class="card live-card">
-        <div class="live-top">
-          <div><p class="eyebrow">LIVE RATE</p><div class="big-rate"><strong id="rateValue">—</strong><span>s/day</span></div><div id="rateUncertainty" class="uncertainty"></div></div>
-          <span id="qualityBadge" class="quality-badge idle">Idle</span>
-        </div>
-        <canvas id="rateGauge" width="720" height="310" aria-label="Live rate gauge"></canvas>
-        <div class="progress-track"><span id="progressBar"></span></div>
-        <p id="analysisState" class="analysis-state">Place the watch close to the phone microphone.</p>
-      </article>
-
-      <section class="metrics" aria-label="Live metrics">
-        <article class="metric card"><p>BPH</p><strong id="bphValue">—</strong><span id="bphConfidence">waiting</span></article>
-        <article class="metric card"><p>JITTER</p><strong id="jitterValue">—</strong><span>ms RMS</span></article>
-        <article class="metric card"><p>SIGNAL</p><strong id="signalValue">—</strong><span id="signalLabel">idle</span></article>
-        <article class="metric card"><p>TICK/TOCK Δ</p><strong id="alternationValue">—</strong><span>ms • experimental</span></article>
-      </section>
-    </section>
-
-    <section class="card measurement-controls">
-      <div class="position-row">
+    <section class="card measurement-workspace">
+      <div class="context-grid">
+        <label>Watch
+          <select id="watchSelect"><option value="">+ New watch</option></select>
+        </label>
         <label>Position
           <select id="position">
-            <option value="DU">DU — Dial up</option>
-            <option value="DD">DD — Dial down</option>
-            <option value="CU">CU — Crown up</option>
-            <option value="CD">CD — Crown down</option>
-            <option value="CL">CL — Crown left</option>
-            <option value="CR">CR — Crown right</option>
+            <option value="DU">DU · Dial up</option>
+            <option value="DD">DD · Dial down</option>
+            <option value="CU">CU · Crown up</option>
+            <option value="CD">CD · Crown down</option>
+            <option value="CL">CL · Crown left</option>
+            <option value="CR">CR · Crown right</option>
           </select>
         </label>
-        <label>BPH
-          <select id="bphMode">
-            <option value="auto">Auto detect</option>
-            <option value="14400">14,400</option><option value="18000">18,000</option><option value="19800">19,800</option><option value="21600">21,600</option><option value="25200">25,200</option><option value="28800">28,800</option><option value="36000">36,000</option><option value="43200">43,200</option>
+        <label>Test time
+          <select id="durationSelect">
+            <option value="15">15 s</option>
+            <option value="30" selected>30 s</option>
+            <option value="45">45 s</option>
+            <option value="60">60 s</option>
+            <option value="90">90 s</option>
+            <option value="120">120 s</option>
           </select>
         </label>
       </div>
-      <label class="sensitivity">Sensitivity <b id="sensitivityValue">5.0×</b><input id="sensitivity" type="range" min="2.5" max="10" value="5" step="0.1" /></label>
-      <div class="action-row">
-        <button id="startBtn" class="primary" type="button">Start</button>
-        <button id="stopBtn" class="secondary" type="button" disabled>Stop</button>
-        <button id="saveResultBtn" class="save" type="button" disabled>Save result</button>
+
+      <div class="live-head">
+        <div>
+          <p class="eyebrow">LIVE RATE</p>
+          <div class="big-rate"><strong id="rateValue">—</strong><span>s/day</span></div>
+          <div id="rateUncertainty" class="uncertainty"></div>
+        </div>
+        <div class="timer-stack">
+          <span id="qualityBadge" class="quality-badge idle">Idle</span>
+          <strong id="countdownValue" class="countdown">00:30</strong>
+          <small id="timerCaption">test duration</small>
+        </div>
+      </div>
+
+      <canvas id="rateGauge" width="720" height="300" aria-label="Live rate gauge"></canvas>
+      <div class="progress-track" aria-label="Measurement time"><span id="progressBar"></span></div>
+      <p id="analysisState" class="analysis-state">Choose a watch and place it close to the phone microphone.</p>
+
+      <section class="metrics compact-metrics" aria-label="Live metrics">
+        <article class="metric"><p>BPH</p><strong id="bphValue">—</strong><span id="bphConfidence">waiting</span></article>
+        <article class="metric"><p>JITTER</p><strong id="jitterValue">—</strong><span>ms RMS</span></article>
+        <article class="metric"><p>SIGNAL</p><strong id="signalValue">—</strong><span id="signalLabel">idle</span></article>
+        <article class="metric"><p>TICK/TOCK Δ</p><strong id="alternationValue">—</strong><span>ms · exp.</span></article>
+      </section>
+
+      <div class="control-dock" aria-label="Measurement controls">
+        <button id="startBtn" class="primary" type="button">▶ Start</button>
+        <button id="stopBtn" class="secondary" type="button" disabled>■ Stop</button>
+        <button id="saveResultBtn" class="save" type="button" disabled>Save</button>
         <button id="resetBtn" class="ghost" type="button">Reset</button>
       </div>
       <div class="micro-meta"><span id="elapsed">0.0 s</span><span id="eventCount">0 events</span><span id="sampleRate">— Hz</span></div>
@@ -80,7 +81,7 @@
 
     <section class="card plot-card">
       <div class="section-head"><div><p class="eyebrow">TIMEGRAPHER</p><h2>Beat stability</h2></div><span class="legend"><i></i>tick <i></i>tock</span></div>
-      <canvas id="timegrapher" width="900" height="300"></canvas>
+      <canvas id="timegrapher" width="900" height="260"></canvas>
     </section>
 
     <section class="card positions-card">
@@ -88,13 +89,36 @@
       <div id="positionSummary" class="position-summary"></div>
     </section>
 
+    <details class="card watch-card" open>
+      <summary><span><b>Watch profile</b><small>Name, model and movement</small></span></summary>
+      <div class="watch-fields">
+        <label>Name<input id="watchName" type="text" placeholder="e.g. Hamilton Khaki" autocomplete="off" /></label>
+        <label>Model<input id="watchModel" type="text" placeholder="Model / reference" autocomplete="off" /></label>
+        <label>Movement<input id="watchMovement" type="text" placeholder="e.g. ETA 2824-2" autocomplete="off" /></label>
+        <button id="saveWatchBtn" type="button" class="ghost">Save profile</button>
+      </div>
+    </details>
+
+    <details class="card settings-card">
+      <summary><span><b>Measurement settings</b><small>BPH and sensitivity</small></span></summary>
+      <div class="settings-grid">
+        <label>BPH
+          <select id="bphMode">
+            <option value="auto">Auto detect</option>
+            <option value="14400">14,400</option><option value="18000">18,000</option><option value="19800">19,800</option><option value="21600">21,600</option><option value="25200">25,200</option><option value="28800">28,800</option><option value="36000">36,000</option><option value="43200">43,200</option>
+          </select>
+        </label>
+        <label class="sensitivity">Sensitivity <b id="sensitivityValue">5.0×</b><input id="sensitivity" type="range" min="2.5" max="10" value="5" step="0.1" /></label>
+      </div>
+    </details>
+
     <section class="card history-card">
       <div class="section-head"><div><p class="eyebrow">HISTORY</p><h2>Saved tests</h2></div><div class="mini-actions"><button id="exportCsvBtn" type="button">CSV</button><button id="clearTestsBtn" type="button">Clear</button></div></div>
       <div id="historyBody" class="history-body"></div>
     </section>
 
     <details class="card diagnostics">
-      <summary>Microphone & diagnostics</summary>
+      <summary><span><b>Microphone & diagnostics</b><small>Advanced</small></span></summary>
       <div class="diag-grid">
         <label>Input device<select id="inputDevice"><option value="">System default microphone</option></select></label>
         <button id="refreshDevicesBtn" type="button" class="ghost">Refresh inputs</button>
@@ -104,13 +128,13 @@
         <div><span>Selected channel</span><b id="selectedChannel">—</b></div><div><span>L / R RMS</span><b id="channelLevels">—</b></div>
         <div><span>Peak / noise</span><b id="peakNoise">—</b></div><div><span>Threshold</span><b id="thresholdSetting">—</b></div>
       </div>
-      <canvas id="levelPlot" width="700" height="180"></canvas>
+      <canvas id="levelPlot" width="700" height="160"></canvas>
     </details>
 
-    <section class="card notes"><b>Measurement behavior:</b> BPH is shown first. A quick rate estimate appears after a few seconds; the confidence improves as the measurement continues. Saved tests remain on this phone/browser using local storage. Tick/Tock Δ is an experimental timing-asymmetry indicator, not yet a calibrated beat-error value.</section>
+    <section class="card notes"><b>Timed tests:</b> the selected test time counts down automatically. At zero, WatchLabX stops the microphone and automatically saves the latest valid result to the selected watch and position. If no valid result exists, nothing is saved.</section>
     <footer><span>WatchLabX • audio processed locally</span><span id="secureNote"></span></footer>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="./app.mjs?v=0.2.0"></script>
+  <script type="module" src="./app.mjs?v=0.2.1"></script>
 </body>
 </html>

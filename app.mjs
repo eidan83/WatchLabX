@@ -1,8 +1,8 @@
-import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.2.0';
+import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.2.1';
 
 const $ = id => document.getElementById(id);
 const els = {
-  startBtn:$('startBtn'), stopBtn:$('stopBtn'), resetBtn:$('resetBtn'), saveResultBtn:$('saveResultBtn'),
+  startBtn:$('startBtn'), stopBtn:$('stopBtn'), resetBtn:$('resetBtn'), saveResultBtn:$('saveResultBtn'), durationSelect:$('durationSelect'), countdownValue:$('countdownValue'), timerCaption:$('timerCaption'),
   bphMode:$('bphMode'), position:$('position'), sensitivity:$('sensitivity'), sensitivityValue:$('sensitivityValue'),
   inputDevice:$('inputDevice'), refreshDevicesBtn:$('refreshDevicesBtn'),
   micDot:$('micDot'), micStatus:$('micStatus'), analysisState:$('analysisState'), qualityBadge:$('qualityBadge'),
@@ -27,7 +27,7 @@ const state = {
   stream:null, context:null, source:null, node:null, sink:null, running:false, startedAt:null, raf:0,
   ticks:[], levelHistory:[], latestLevel:{rms:0,noise:1e-7,peak:0,channels:[],selectedChannel:0}, latestEvent:null,
   lockedBph:null, candidateBph:null, candidateStreak:0, bphDetection:null, lastTiming:null,
-  displayRate:null, rateTrail:[], currentReading:null, lastAnalysisWall:0, staleSince:null,
+  displayRate:null, rateTrail:[], currentReading:null, lastAnalysisWall:0, staleSince:null, targetDurationSec:30, finishing:false,
   library:loadLibrary(), activeWatchId:null
 };
 state.activeWatchId = state.library.activeWatchId || null;
@@ -77,6 +77,14 @@ async function refreshInputDevices({requestPermission=false}={}){
   finally{ temp?.getTracks().forEach(t=>t.stop()); }
 }
 
+function formatCountdown(seconds){
+  const n=Math.max(0,Math.ceil(Number(seconds)||0));
+  const m=Math.floor(n/60),s=n%60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+function selectedDuration(){ return Math.max(5,Number(els.durationSelect?.value)||30); }
+function updateIdleCountdown(){ if(!state.running&&els.countdownValue){els.countdownValue.textContent=formatCountdown(selectedDuration());els.timerCaption.textContent='test duration';els.progressBar.style.width='0%';} }
+
 async function start(){
   if(state.running) return;
   if(!navigator.mediaDevices?.getUserMedia){ setMicStatus('Microphone unavailable','error'); return; }
@@ -86,16 +94,17 @@ async function start(){
     const stream=await navigator.mediaDevices.getUserMedia(requestedConstraints(els.inputDevice.value));
     const AC=window.AudioContext||window.webkitAudioContext;
     const context=new AC({latencyHint:'interactive',sampleRate:48000});
-    await context.audioWorklet.addModule('./tick-processor.js?v=0.2.0');
+    await context.audioWorklet.addModule('./tick-processor.js?v=0.2.1');
     await context.resume();
     const source=context.createMediaStreamSource(stream);
     const node=new AudioWorkletNode(context,'watchlabx-tick-processor',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:2,channelCountMode:'max',channelInterpretation:'discrete'});
     const sink=context.createGain(); sink.gain.value=0;
     source.connect(node).connect(sink).connect(context.destination);
     node.port.onmessage=onAudioMessage;
-    Object.assign(state,{stream,context,source,node,sink,running:true,startedAt:performance.now(),ticks:[],levelHistory:[],latestEvent:null,lockedBph:null,candidateBph:null,candidateStreak:0,bphDetection:null,lastTiming:null,displayRate:null,rateTrail:[],currentReading:null,lastAnalysisWall:0});
+    Object.assign(state,{stream,context,source,node,sink,running:true,startedAt:performance.now(),ticks:[],levelHistory:[],latestEvent:null,lockedBph:null,candidateBph:null,candidateStreak:0,bphDetection:null,lastTiming:null,displayRate:null,rateTrail:[],currentReading:null,lastAnalysisWall:0,targetDurationSec:selectedDuration(),finishing:false});
     applySensitivity(); showTrackSettings(stream.getAudioTracks()[0]);
-    els.startBtn.disabled=true; els.stopBtn.disabled=false; els.saveResultBtn.disabled=true; els.inputDevice.disabled=true; els.refreshDevicesBtn.disabled=true;
+    els.startBtn.disabled=true; els.stopBtn.disabled=false; els.saveResultBtn.disabled=true; els.inputDevice.disabled=true; els.refreshDevicesBtn.disabled=true; els.durationSelect.disabled=true; els.position.disabled=true; els.watchSelect.disabled=true;
+    els.countdownValue.textContent=formatCountdown(state.targetDurationSec); els.timerCaption.textContent='remaining'; els.progressBar.style.width='0%';
     setMicStatus('Microphone active','live'); setQuality('Listening','idle'); els.analysisState.textContent='Listening for a mechanical beat';
     loop();
   }catch(err){
@@ -110,16 +119,44 @@ async function stop(){
   state.stream?.getTracks().forEach(t=>t.stop());
   if(state.context&&state.context.state!=='closed') await state.context.close();
   state.stream=state.context=state.source=state.node=state.sink=null;
-  els.startBtn.disabled=false; els.stopBtn.disabled=true; els.inputDevice.disabled=false; els.refreshDevicesBtn.disabled=false;
+  els.startBtn.disabled=false; els.stopBtn.disabled=true; els.inputDevice.disabled=false; els.refreshDevicesBtn.disabled=false; els.durationSelect.disabled=false; els.position.disabled=false; els.watchSelect.disabled=false;
   setMicStatus('Microphone idle');
   els.analysisState.textContent=state.currentReading?'Stopped — result ready to save':'Stopped';
-  await refreshInputDevices();
+  updateIdleCountdown();
 }
+
+async function finishTimedMeasurement(){
+  if(!state.running||state.finishing) return;
+  state.finishing=true;
+  const snapshot=state.currentReading?{...state.currentReading}:null;
+  await stop();
+  let saved=false;
+  if(snapshot){
+    state.currentReading=snapshot;
+    saved=saveMeasurement({auto:true});
+  }
+  if(saved){
+    state.currentReading=null; els.saveResultBtn.disabled=true;
+    els.analysisState.textContent='Test complete • saved automatically';
+    els.timerCaption.textContent='saved';
+  }else if(snapshot){
+    state.currentReading=snapshot; els.saveResultBtn.disabled=false;
+    els.analysisState.textContent='Test complete • result ready to save';
+    els.timerCaption.textContent='complete';
+  }else{
+    els.analysisState.textContent='Test complete • no valid result to save';
+    els.timerCaption.textContent='no result';
+  }
+  els.countdownValue.textContent='00:00'; els.progressBar.style.width='100%';
+  if(navigator.vibrate) navigator.vibrate([70,50,110]);
+  state.finishing=false;
+}
+
 
 function reset(){
   state.ticks=[]; state.levelHistory=[]; state.latestEvent=null; state.lockedBph=null; state.candidateBph=null; state.candidateStreak=0; state.bphDetection=null; state.lastTiming=null; state.displayRate=null; state.rateTrail=[]; state.currentReading=null;
   state.startedAt=state.running?performance.now():null;
-  state.node?.port.postMessage({type:'reset'}); clearLive({keepSignal:false}); drawAll();
+  state.node?.port.postMessage({type:'reset'}); clearLive({keepSignal:false}); updateIdleCountdown(); drawAll();
 }
 
 function clearLive({keepSignal=true}={}){
@@ -232,8 +269,14 @@ function updateAnalysis(){
 }
 
 function updateStats(){
-  const e=state.startedAt?Math.max(0,(performance.now()-state.startedAt)/1000):0; els.elapsed.textContent=`${e.toFixed(1)} s`; els.eventCount.textContent=`${state.ticks.length} events`;
-  const p=state.lastTiming?clamp(state.lastTiming.duration/8,0,1):0; els.progressBar.style.width=`${Math.round(p*100)}%`;
+  const e=state.startedAt?Math.max(0,(performance.now()-state.startedAt)/1000):0;
+  els.elapsed.textContent=`${e.toFixed(1)} s`; els.eventCount.textContent=`${state.ticks.length} events`;
+  const duration=state.targetDurationSec||selectedDuration();
+  const remaining=Math.max(0,duration-e);
+  els.countdownValue.textContent=formatCountdown(remaining);
+  els.timerCaption.textContent=state.running?'remaining':'test duration';
+  const p=clamp(e/duration,0,1); els.progressBar.style.width=`${Math.round(p*100)}%`;
+  if(state.running&&remaining<=0&&!state.finishing) finishTimedMeasurement();
 }
 
 function showTrackSettings(track){
@@ -285,10 +328,10 @@ function saveWatchProfile(){
   if(!w){w={id:uid(),name,model:'',movement:'',createdAt:new Date().toISOString(),measurements:[]};state.library.watches.unshift(w);state.activeWatchId=w.id;}
   w.name=name;w.model=els.watchModel.value.trim();w.movement=els.watchMovement.value.trim();saveLibrary();renderWatchSelect();showToast('Watch profile saved');return w;
 }
-function saveMeasurement(){
-  if(!state.currentReading){showToast('No valid reading to save');return;}
-  let w=state.library.watches.find(x=>x.id===state.activeWatchId)||saveWatchProfile(); if(!w)return;
-  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rate:+r.rate.toFixed(2),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2)});saveLibrary();renderHistory();renderPositionSummary();showToast(`${POSITIONS[r.position]?.short||r.position} result saved`);
+function saveMeasurement({auto=false}={}){
+  if(!state.currentReading){if(!auto)showToast('No valid reading to save');return false;}
+  let w=state.library.watches.find(x=>x.id===state.activeWatchId)||saveWatchProfile(); if(!w)return false;
+  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rate:+r.rate.toFixed(2),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration())});saveLibrary();renderHistory();renderPositionSummary();showToast(`${POSITIONS[r.position]?.short||r.position} ${auto?'saved automatically':'result saved'}`);return true;
 }
 function measurementsForActive(){return state.library.watches.find(x=>x.id===state.activeWatchId)?.measurements||[];}
 function renderPositionSummary(){
@@ -303,17 +346,17 @@ function renderHistory(){
 }
 function exportCsv(){
   const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w||!w.measurements?.length){showToast('No saved tests to export');return;}
-  const rows=[['watch','model','movement','timestamp','position','rate_s_day','bph','jitter_ms','alternation_ms','signal_pct','confidence','uncertainty_s_day','duration_s']];
-  w.measurements.slice().reverse().forEach(m=>rows.push([w.name,w.model||'',w.movement||'',m.timestamp,m.position,m.rate,m.bph,m.jitter,m.alternation,m.signal,m.confidence,m.uncertainty,m.duration]));
+  const rows=[['watch','model','movement','timestamp','position','rate_s_day','bph','jitter_ms','alternation_ms','signal_pct','confidence','uncertainty_s_day','duration_s','test_duration_s']];
+  w.measurements.slice().reverse().forEach(m=>rows.push([w.name,w.model||'',w.movement||'',m.timestamp,m.position,m.rate,m.bph,m.jitter,m.alternation,m.signal,m.confidence,m.uncertainty,m.duration,m.testDuration||'']));
   const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`WatchLabX-${w.name.replace(/[^a-z0-9_-]+/gi,'_')}.csv`;a.click();URL.revokeObjectURL(url);
 }
 function clearTests(){const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w||!w.measurements?.length)return;if(confirm(`Delete all saved tests for ${w.name}?`)){w.measurements=[];saveLibrary();renderHistory();renderPositionSummary();}}
 
-els.startBtn.addEventListener('click',start);els.stopBtn.addEventListener('click',stop);els.resetBtn.addEventListener('click',reset);els.saveResultBtn.addEventListener('click',saveMeasurement);
+els.startBtn.addEventListener('click',start);els.stopBtn.addEventListener('click',stop);els.resetBtn.addEventListener('click',reset);els.saveResultBtn.addEventListener('click',()=>saveMeasurement());els.durationSelect.addEventListener('change',updateIdleCountdown);
 els.refreshDevicesBtn.addEventListener('click',()=>refreshInputDevices({requestPermission:true}));els.sensitivity.addEventListener('input',applySensitivity);
 els.bphMode.addEventListener('change',()=>{state.lockedBph=null;state.candidateBph=null;state.candidateStreak=0;state.node?.port.postMessage({type:'config',minGapSec:.055});});
 els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);
 window.addEventListener('resize',drawAll);window.addEventListener('beforeunload',()=>state.stream?.getTracks().forEach(t=>t.stop()));navigator.mediaDevices?.addEventListener?.('devicechange',()=>{if(!state.running)refreshInputDevices();});
 
 els.secureNote.textContent=window.isSecureContext?'HTTPS secure context • audio stays on this device.':'Open via HTTPS to enable microphone access.';
-refreshInputDevices();renderWatchSelect();drawAll();
+refreshInputDevices();renderWatchSelect();updateIdleCountdown();drawAll();

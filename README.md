@@ -1,32 +1,26 @@
-# WatchLabX v0.2.0 — Mobile Sessions
+# WatchLabX v0.2.1 — Mobile Timer
 
-A mobile-first browser timegrapher for mechanical watches.
+A phone-first browser timegrapher for mechanical watches.
 
-## What changed in v0.2.0
+## What changed in v0.2.1
 
-- Fast BPH lock with harmonic refinement to reduce half-frequency locks.
-- Quick rate estimate after a few seconds; confidence improves with measurement duration.
-- Robust rolling timing fit with separate Tick/Tock phase term and outlier resistance.
-- Implausible/unstable rates are withheld instead of showing huge transient values.
-- Live readings clear when valid watch beats disappear.
-- Mobile rate gauge with colored quality zones and recent-rate trail.
-- Saved watch profiles: name, model/reference, and movement.
-- Six-position test workflow: Dial Up, Dial Down, Crown Up, Crown Down, Crown Left, Crown Right.
-- Multiple saved tests per position, persistent in browser localStorage.
-- Position summary with mean rate and positional delta.
-- CSV export and individual-history deletion.
-- Original v0.1.3 acoustic detector retained to avoid destabilizing microphone capture.
+- Measurement duration selector: 15, 30, 45, 60, 90, or 120 seconds.
+- Large live countdown and time-progress bar.
+- Automatic stop at the selected duration.
+- Automatic save of the latest valid reading to the selected watch and position.
+- If no valid reading exists at timeout, the test stops without saving false data.
+- Mobile measurement workspace redesigned so watch, position, duration, rate gauge, live metrics, and Start/Stop/Save/Reset are visible together.
+- Sticky mobile control dock keeps the measurement controls reachable without scrolling.
+- Watch profile, measurement settings, history, and diagnostics moved below the live workspace.
+- Saved results now include the scheduled test duration in local storage and CSV export.
+- Completion vibration is used on supported phones.
 
-## Measurement notes
+## Measurement engine
 
-BPH can lock quickly, but an accurate rate requires observing phase drift over time. The UI therefore separates a quick estimate from a stable estimate rather than displaying an unreliable instant number.
+The v0.2.0 timing engine and the original v0.1.3 acoustic detector are retained. v0.2.1 focuses on the timed mobile workflow rather than changing the detector again.
 
-`Tick/Tock Δ` is an experimental timing-asymmetry indicator. It is not yet a calibrated beat-error measurement and should not be interpreted as one.
+`Tick/Tock Δ` remains experimental and is not a calibrated beat-error value.
 
 ## GitHub Pages
 
-Upload the files in this folder to the repository root. Keep `.nojekyll`. Configure GitHub Pages to deploy from `main` and `/ (root)`.
-
-## Local test
-
-Run `serve.bat` on Windows. The local build uses port 8774.
+Upload the GitHub Pages-ready files to the repository root and keep `.nojekyll`. Existing GitHub Pages settings do not need to be changed.

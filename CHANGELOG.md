@@ -1,14 +1,15 @@
 # Changelog
 
-## v0.2.0 — Mobile Sessions
+## v0.2.1 — Mobile Timer
 
-- Rebuilt the interface around mobile use and position testing.
-- Added persistent watch profiles and saved measurement history.
-- Added six standard orientation slots: DU, DD, CU, CD, CL, CR.
-- Added CSV export and per-result deletion.
-- Added semicircular rate gauge, colored rate zones, rate trail, and improved timegrapher scatter view.
-- Added robust rolling analyzer with parity/Tick-Tock phase term and Huber weighting.
-- Added BPH harmonic refinement to reduce 2:1 subharmonic locks.
-- Added quick/stable result states and uncertainty display.
-- Added stale-watch clearing when valid beat sequence disappears.
-- Kept the v0.1.3 AudioWorklet detector unchanged.
+- Added selectable timed tests (15–120 s).
+- Added live countdown and duration progress bar.
+- Added automatic stop at timeout.
+- Added automatic result saving at timeout when a valid reading exists.
+- Prevented timeout from saving invalid/no-result measurements.
+- Rebuilt the top of the app as a compact phone-first measurement workspace.
+- Kept Start, Stop, Save, and Reset in a sticky control dock near the rate gauge.
+- Moved secondary profile/settings/diagnostic controls below the live measurement screen.
+- Added scheduled test duration to saved measurements and CSV export.
+- Added optional completion vibration on supported mobile devices.
+- Retained v0.2.0 timing analysis and v0.1.3 acoustic capture logic.
