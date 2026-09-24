@@ -1,31 +1,24 @@
-# WatchLabX v0.4.0 Validation
+# WatchLabX v0.4.1 Validation
 
-Validation completed for the v0.4.0 Sensor Lab build.
+Validation completed for the Sensor Stability hotfix.
 
-## Regression
+## Automated regression suite
 
-- Original acoustic core tests: PASS
-- Robustness / missed-beat / false-impulse tests: PASS
-- v0.2.0 fast analysis tests: PASS
-- v0.2.1 mobile timer tests: PASS
-- v0.2.2 BPH accuracy / harmonic discrimination tests: PASS
-- v0.3.0 calibration and report tests: PASS
-- v0.3.1 bilingual guide / Watch Passport tests: PASS
+- Core timing / robustness / sensitivity / multi-impulse: PASS
+- v0.2.0 fast/robust analysis: PASS
+- v0.2.1 mobile timer/UI: PASS
+- v0.2.2 BPH accuracy/harmonic regression: PASS
+- v0.3.0 calibration/report: PASS
+- v0.3.1 bilingual guide/passport: PASS
+- v0.4.0 Sensor Lab: PASS
+- v0.4.1 sensor stability: PASS
 
-## Sensor Lab
+## New v0.4.1 checks
 
-- Vector magnitude and normalization: PASS
-- Mean-vector statistics: PASS
-- Magnetic vector-difference calculation: PASS
-- Learned orientation matching: PASS
-- Opposite-orientation discrimination: PASS
-- Sensor Lab UI markers: PASS
-- Magnetometer feature-detection code path: PASS
-- Motion permission code path: PASS
-- Magnetic Watch Passport / report integration markers: PASS
+- Stable orientation cloud with injected outliers recovers the correct normalized direction.
+- Outlier samples are rejected during orientation calibration.
+- Learned DU profile correctly matches a nearby live orientation.
+- Orientation learning uses a multi-second capture window rather than a single instantaneous sample.
+- Auto-position logic requires a dwell interval before changing the selected position.
 
-## Core preservation
-
-`core.mjs`, `tick-processor.js`, and `report.mjs` are byte-for-byte identical to v0.3.1.
-
-Magnetic screening is experimental and intentionally does not claim a pass/fail magnetization threshold.
+The acoustic timing engine and calibration/report logic were not redesigned in this hotfix.

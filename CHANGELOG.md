@@ -1,14 +1,11 @@
-# WatchLabX Changelog
+# Changelog
 
-## v0.4.0 — Sensor Lab
+## v0.4.1 — Sensor Stability HF
 
-- Added optional mobile Sensor Lab.
-- Added motion-sensor permission workflow.
-- Added learned orientation profiles for DU/DD/CU/CD/CL/CR.
-- Added optional automatic position selection based on the learned phone/watch posture.
-- Added runtime Magnetometer feature detection.
-- Added two-stage 3 s magnetic screening: background then watch.
-- Added vector magnetic deviation `ΔB` in µT, without claiming calibrated watch magnetization.
-- Added magnetic results to Watch Passport and Watch Report.
-- Updated bilingual Guide with Sensor Lab instructions.
-- Preserved the v0.3.1 timing engine, AudioWorklet detector, calibration math and report math unchanged.
+- Replaces single-moment orientation learning with a 2.2 s stable capture window.
+- Uses robust normalized-vector averaging and rejects motion outliers during learning.
+- Stores per-position angular spread (σθ) and sample count.
+- Adds adaptive matching tolerance based on the learned spread of each position.
+- Requires a stable match for ~650 ms before Auto-set position changes DU/DD/CU/CD/CL/CR.
+- Displays live angular stability next to the gravity vector.
+- Keeps the v0.4.0 timing, calibration, report, passport and magnetic-screening logic unchanged.

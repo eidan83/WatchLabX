@@ -1,6 +1,6 @@
-import { vectorMagnitude, normalizeVector, meanVector, fieldStats, deltaVectorMagnitude, matchOrientation, axisPosture } from './sensor.mjs?v=0.4.0';
-import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.4.0';
-import { weightedCalibration, applyRateCalibration, summarizeMeasurements, assessmentFromSummary } from './report.mjs?v=0.4.0';
+import { vectorMagnitude, normalizeVector, meanVector, robustOrientationStats, fieldStats, deltaVectorMagnitude, matchOrientation, axisPosture } from './sensor.mjs?v=0.4.1';
+import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.4.1';
+import { weightedCalibration, applyRateCalibration, summarizeMeasurements, assessmentFromSummary } from './report.mjs?v=0.4.1';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -37,7 +37,7 @@ const state = {
   lockedBph:null, lockedBphConfidence:0, candidateBph:null, candidateStreak:0, bphDetection:null, lastTiming:null,
   displayRate:null, rateTrail:[], currentReading:null, lastAnalysisWall:0, staleSince:null, targetDurationSec:30, finishing:false,
   library:loadLibrary(), activeWatchId:null,
-  sensors:{motionEnabled:false,motionVector:null,motionSamples:[],motionMatch:null,magnetometer:null,magnetometerState:'off',magReadings:[],magCurrent:null,magBaseline:null,magBusy:false}
+  sensors:{motionEnabled:false,motionVector:null,motionSamples:[],motionMatch:null,magnetometer:null,magnetometerState:'off',magReadings:[],magCurrent:null,magBaseline:null,magBusy:false,orientationCapture:false,matchCandidate:null,matchCandidateSince:0,lastAutoCommit:0}
 };
 state.activeWatchId = state.library.activeWatchId || null;
 
@@ -80,7 +80,12 @@ function setQuality(text,kind='idle'){ els.qualityBadge.textContent=text; els.qu
 
 
 function sensorPositionLabel(code){ return POSITIONS[code]?.short || code || '—'; }
-function motionMean(){ return meanVector(state.sensors.motionSamples.slice(-24)); }
+function motionWindow(ms=900){
+  const cutoff=performance.now()-ms;
+  return state.sensors.motionSamples.filter(s=>s.t>=cutoff);
+}
+function motionStats(ms=900){ return robustOrientationStats(motionWindow(ms)); }
+function motionMean(){ const s=motionStats(900); return s ? {x:s.x,y:s.y,z:s.z,count:s.count} : meanVector(state.sensors.motionSamples.slice(-24)); }
 function updateSensorBadge(){
   const motion=state.sensors.motionEnabled,mag=state.sensors.magnetometerState==='active';
   if(motion&&mag){els.sensorBadge.textContent='Motion + magnetometer';els.sensorBadge.className='sensor-badge live';}
@@ -91,29 +96,67 @@ function updateSensorBadge(){
 function onDeviceMotion(ev){
   const a=ev.accelerationIncludingGravity;
   if(!a||![a.x,a.y,a.z].every(v=>Number.isFinite(Number(v)))) return;
-  const sample={x:Number(a.x),y:Number(a.y),z:Number(a.z),t:performance.now()};
-  state.sensors.motionSamples.push(sample);if(state.sensors.motionSamples.length>120)state.sensors.motionSamples.shift();
-  const mean=motionMean();if(!mean)return;state.sensors.motionVector=mean;
+  const now=performance.now();
+  const sample={x:Number(a.x),y:Number(a.y),z:Number(a.z),t:now};
+  state.sensors.motionSamples.push(sample);if(state.sensors.motionSamples.length>240)state.sensors.motionSamples.shift();
+  const stats=motionStats(900);if(!stats)return;
+  const mean={x:stats.x,y:stats.y,z:stats.z};state.sensors.motionVector=mean;
   const n=normalizeVector(mean),posture=axisPosture(mean);
   els.phonePosture.textContent=`${posture.label} · ${posture.axis}`;
-  els.gravityVector.textContent=n?`${n.x.toFixed(2)} / ${n.y.toFixed(2)} / ${n.z.toFixed(2)}`:'—';
-  const match=matchOrientation(mean,state.library.orientationProfiles||{},28);state.sensors.motionMatch=match;
+  els.gravityVector.textContent=n?`${n.x.toFixed(2)} / ${n.y.toFixed(2)} / ${n.z.toFixed(2)} · σθ ${stats.rmsDeg.toFixed(1)}°`:'—';
+  const match=matchOrientation(mean,state.library.orientationProfiles||{},24);state.sensors.motionMatch=match;
   if(match?.matched){
+    const stableNow=stats.rmsDeg<=5.5 && stats.quality>=0.35;
+    if(state.sensors.matchCandidate!==match.position){state.sensors.matchCandidate=match.position;state.sensors.matchCandidateSince=now;}
+    const dwell=now-state.sensors.matchCandidateSince;
+    const stableMatch=stableNow && dwell>=650;
     els.orientationDetected.textContent=`${sensorPositionLabel(match.position)} · ${POSITIONS[match.position]?.label||match.position}`;
-    els.orientationConfidence.textContent=`${Math.round(match.confidence*100)}% · ${match.angle.toFixed(1)}°`;
-    if(state.library.autoPosition && match.confidence>=0.45 && !state.running && els.position.value!==match.position){els.position.value=match.position;}
-  }else if(Object.keys(state.library.orientationProfiles||{}).length){
-    els.orientationDetected.textContent='No learned posture match';els.orientationConfidence.textContent=match?`${match.angle.toFixed(1)}° away`:'—';
-  }else {els.orientationDetected.textContent='Learn a position first';els.orientationConfidence.textContent='—';}
+    els.orientationConfidence.textContent=`${Math.round(match.confidence*100)}% · ${match.angle.toFixed(1)}° · ${stableMatch?'stable':'hold still'}`;
+    if(state.library.autoPosition && stableMatch && match.confidence>=0.50 && !state.running && els.position.value!==match.position && now-state.sensors.lastAutoCommit>900){
+      els.position.value=match.position;state.sensors.lastAutoCommit=now;
+    }
+  }else{
+    state.sensors.matchCandidate=null;state.sensors.matchCandidateSince=0;
+    if(Object.keys(state.library.orientationProfiles||{}).length){
+      els.orientationDetected.textContent='No learned posture match';els.orientationConfidence.textContent=match?`${match.angle.toFixed(1)}° away · hold still`:'—';
+    }else {els.orientationDetected.textContent='Learn a position first';els.orientationConfidence.textContent='—';}
+  }
 }
 function renderOrientationProfiles(){
   const profiles=state.library.orientationProfiles||{};els.orientationProfiles.innerHTML='';
-  Object.entries(POSITIONS).forEach(([code,p])=>{const b=document.createElement('button');b.type='button';const learned=Boolean(profiles[code]);b.className=`orientation-chip ${learned?'learned':''}`;b.innerHTML=`<b>${code}</b><span>${learned?'learned':'—'}</span>`;b.addEventListener('click',()=>{els.position.value=code;showToast(`${p.label} selected`);});els.orientationProfiles.appendChild(b);});
+  Object.entries(POSITIONS).forEach(([code,p])=>{
+    const b=document.createElement('button');b.type='button';const profile=profiles[code],learned=Boolean(profile);
+    b.className=`orientation-chip ${learned?'learned':''}`;
+    const detail=learned?(Number.isFinite(Number(profile.rmsDeg))?`σ ${Number(profile.rmsDeg).toFixed(1)}°`:'learned'):'—';
+    b.innerHTML=`<b>${code}</b><span>${detail}</span>`;
+    b.addEventListener('click',()=>{els.position.value=code;showToast(`${p.label} selected`);});els.orientationProfiles.appendChild(b);
+  });
   els.autoPositionToggle.checked=Boolean(state.library.autoPosition);
 }
-function learnSelectedPosition(){
-  const mean=motionMean(),n=normalizeVector(mean);if(!n){showToast('Enable motion sensors and hold the phone still first');return;}
-  const code=els.position.value;state.library.orientationProfiles=state.library.orientationProfiles||{};state.library.orientationProfiles[code]={...n,timestamp:new Date().toISOString()};saveLibrary();renderOrientationProfiles();onDeviceMotion({accelerationIncludingGravity:mean});showToast(`${code} posture learned`);
+async function learnSelectedPosition(){
+  if(state.sensors.orientationCapture)return;
+  if(!state.sensors.motionEnabled){showToast('Enable phone sensors first');return;}
+  state.sensors.orientationCapture=true;
+  const code=els.position.value,old=els.learnPositionBtn.textContent;
+  els.learnPositionBtn.disabled=true;
+  try{
+    const start=performance.now();
+    while(performance.now()-start<2200){
+      const remain=Math.max(0,2.2-(performance.now()-start)/1000);
+      els.learnPositionBtn.textContent=`Hold still ${remain.toFixed(1)}s`;
+      await new Promise(r=>setTimeout(r,100));
+    }
+    const samples=state.sensors.motionSamples.filter(s=>s.t>=start && s.t<=performance.now());
+    const stats=robustOrientationStats(samples);
+    if(!stats||stats.count<12){showToast('Not enough motion-sensor samples — try again');return;}
+    if(stats.rmsDeg>7.5 || stats.quality<0.22){showToast(`Too much movement (σ ${stats.rmsDeg.toFixed(1)}°) — hold the phone steadier`);return;}
+    state.library.orientationProfiles=state.library.orientationProfiles||{};
+    state.library.orientationProfiles[code]={x:stats.x,y:stats.y,z:stats.z,rmsDeg:+stats.rmsDeg.toFixed(3),quality:+stats.quality.toFixed(3),sampleCount:stats.count,timestamp:new Date().toISOString()};
+    saveLibrary();renderOrientationProfiles();state.sensors.matchCandidate=null;state.sensors.matchCandidateSince=0;
+    showToast(`${code} learned from ${stats.count} stable samples · σ ${stats.rmsDeg.toFixed(1)}°`);
+  }finally{
+    els.learnPositionBtn.disabled=false;els.learnPositionBtn.textContent=old;state.sensors.orientationCapture=false;
+  }
 }
 function clearOrientationProfiles(){
   if(!Object.keys(state.library.orientationProfiles||{}).length)return;
@@ -216,7 +259,7 @@ function updateIdleCountdown(){ if(!state.running&&els.countdownValue){els.count
 
 async function start(){
   if(state.running) return;
-  if(state.library.autoPosition && state.sensors.motionMatch?.matched && state.sensors.motionMatch.confidence>=0.45) els.position.value=state.sensors.motionMatch.position;
+  if(state.library.autoPosition && state.sensors.motionMatch?.matched && state.sensors.motionMatch.confidence>=0.50 && state.sensors.matchCandidate===state.sensors.motionMatch.position && performance.now()-state.sensors.matchCandidateSince>=650) els.position.value=state.sensors.motionMatch.position;
   if(!navigator.mediaDevices?.getUserMedia){ setMicStatus('Microphone unavailable','error'); return; }
   try{
     clearLive({keepSignal:false});
@@ -516,7 +559,7 @@ function saveMeasurement({auto=false}={}){
   if(!state.currentReading){if(!auto)showToast('No valid reading to save');return false;}
   let w=state.library.watches.find(x=>x.id===state.activeWatchId)||saveWatchProfile(); if(!w)return false;
   const before=summarizeMeasurements(calibratedMeasurements(w.measurements||[]));
-  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rawRate:+Number(r.rawRate??r.rate).toFixed(2),rate:+r.rate.toFixed(2),calibrationOffset:+Number(r.calibrationOffset||0).toFixed(3),calibrationCount:Number(r.calibrationCount||0),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration()),orientationPosition:state.sensors.motionMatch?.matched?state.sensors.motionMatch.position:'',orientationConfidence:state.sensors.motionMatch?.matched?+state.sensors.motionMatch.confidence.toFixed(3):null});
+  const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rawRate:+Number(r.rawRate??r.rate).toFixed(2),rate:+r.rate.toFixed(2),calibrationOffset:+Number(r.calibrationOffset||0).toFixed(3),calibrationCount:Number(r.calibrationCount||0),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration()),orientationPosition:state.sensors.motionMatch?.matched&&state.sensors.matchCandidate===state.sensors.motionMatch.position&&performance.now()-state.sensors.matchCandidateSince>=650?state.sensors.motionMatch.position:'',orientationConfidence:state.sensors.motionMatch?.matched?+state.sensors.motionMatch.confidence.toFixed(3):null});
   saveLibrary();renderHistory();renderPositionSummary();renderPassport();showToast(`${POSITIONS[r.position]?.short||r.position} ${auto?'saved automatically':'result saved'}`);
   const after=summarizeMeasurements(calibratedMeasurements(w.measurements));
   if(!before.complete&&after.complete) setTimeout(()=>openReport({auto:true}),300);
