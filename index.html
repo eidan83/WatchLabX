@@ -7,17 +7,20 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>WatchLabX — Mobile Timegrapher</title>
-  <link rel="stylesheet" href="./styles.css?v=0.3.0" />
+  <link rel="stylesheet" href="./styles.css?v=0.3.1" />
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div>
         <p class="eyebrow">MECHANICAL WATCH ANALYZER</p>
-        <h1>WatchLabX <span>v0.3.0</span></h1>
+        <h1>WatchLabX <span>v0.3.1</span></h1>
         <div class="author-signature" aria-label="Created by Dr. Eidan">Dr.Eidan</div>
       </div>
-      <div class="mic-pill"><span id="micDot" class="dot idle"></span><span id="micStatus">Microphone idle</span></div>
+      <div class="top-actions">
+        <button id="helpBtn" class="help-btn" type="button" aria-haspopup="dialog">? Guide · الدليل</button>
+        <div class="mic-pill"><span id="micDot" class="dot idle"></span><span id="micStatus">Microphone idle</span></div>
+      </div>
     </header>
 
     <section class="card measurement-workspace">
@@ -91,14 +94,29 @@
     </section>
 
     <details class="card watch-card" open>
-      <summary><span><b>Watch profile</b><small>Name, model and movement</small></span></summary>
+      <summary><span><b>Watch profile / ملف الساعة</b><small>Identity, photos and movement</small></span></summary>
       <div class="watch-fields">
-        <label>Name<input id="watchName" type="text" placeholder="e.g. Hamilton Khaki" autocomplete="off" /></label>
-        <label>Model<input id="watchModel" type="text" placeholder="Model / reference" autocomplete="off" /></label>
-        <label>Movement<input id="watchMovement" type="text" placeholder="e.g. ETA 2824-2" autocomplete="off" /></label>
+        <label>Name / الاسم<input id="watchName" type="text" placeholder="e.g. Hamilton Khaki" autocomplete="off" /></label>
+        <label>Model / Reference<input id="watchModel" type="text" placeholder="Model / reference" autocomplete="off" /></label>
+        <label>Movement / الحركة<input id="watchMovement" type="text" placeholder="e.g. ETA 2824-2" autocomplete="off" /></label>
         <button id="saveWatchBtn" type="button" class="ghost">Save profile</button>
       </div>
+      <div class="passport-photo-grid" aria-label="Watch passport photos">
+        <article class="passport-photo-card">
+          <div class="photo-frame"><img id="frontPhotoPreview" alt="Watch front photo" hidden><span id="frontPhotoEmpty">Front<br><small>واجهة الساعة</small></span></div>
+          <div class="photo-actions"><label class="photo-button">Camera / Photo<input id="frontPhotoInput" type="file" accept="image/*" capture="environment"></label><button id="removeFrontPhotoBtn" type="button" class="photo-remove">Remove</button></div>
+        </article>
+        <article class="passport-photo-card">
+          <div class="photo-frame"><img id="backPhotoPreview" alt="Watch caseback photo" hidden><span id="backPhotoEmpty">Caseback<br><small>ظهر الساعة</small></span></div>
+          <div class="photo-actions"><label class="photo-button">Camera / Photo<input id="backPhotoInput" type="file" accept="image/*" capture="environment"></label><button id="removeBackPhotoBtn" type="button" class="photo-remove">Remove</button></div>
+        </article>
+      </div>
     </details>
+
+    <section class="card passport-card" aria-labelledby="passportTitle">
+      <div class="section-head"><div><p class="eyebrow">WATCH PASSPORT</p><h2 id="passportTitle">Current watch</h2></div><span id="passportTestCount" class="passport-count">0 tests</span></div>
+      <div id="passportSummary" class="passport-summary"></div>
+    </section>
 
     <details class="card settings-card">
       <summary><span><b>Measurement settings</b><small>BPH and sensitivity</small></span></summary>
@@ -154,6 +172,34 @@
     <footer><span>WatchLabX • audio processed locally</span><span class="footer-credit">Designed & developed by <b>Dr.Eidan</b></span><span id="secureNote"></span></footer>
   </main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="helpModal" class="help-modal" hidden>
+    <div class="help-backdrop" data-close-help></div>
+    <section class="help-sheet" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <div class="help-toolbar">
+        <div><p class="eyebrow">QUICK GUIDE</p><h2 id="helpTitle">WatchLabX Guide · دليل WatchLabX</h2></div>
+        <button id="closeHelpBtn" type="button" class="ghost">Close</button>
+      </div>
+      <div class="guide-tabs" role="tablist" aria-label="Guide language">
+        <button id="guideEnBtn" type="button" class="active" role="tab" aria-selected="true">English</button>
+        <button id="guideArBtn" type="button" role="tab" aria-selected="false">العربية</button>
+      </div>
+      <div id="guideEn" class="guide-page" lang="en">
+        <section><h3>1. Prepare the watch</h3><p>Place the watch close to the phone microphone in a quiet room. Start with 30 seconds. Keep the phone and watch still during the test.</p></section>
+        <section><h3>2. Choose the position</h3><p><b>DU</b> Dial Up · <b>DD</b> Dial Down · <b>CU</b> Crown Up · <b>CD</b> Crown Down · <b>CL</b> Crown Left · <b>CR</b> Crown Right. Test all six for a complete report.</p></section>
+        <section><h3>3. Read the result</h3><p><b>BPH</b> is the movement beat rate. <b>Rate</b> is gain/loss in seconds per day. <b>Jitter</b> is acoustic timing scatter. <b>Signal</b> reflects usable microphone strength. Tick/Tock Δ is experimental and is not certified beat error.</p></section>
+        <section><h3>4. Calibration</h3><p>For better rate accuracy, compare a stable WatchLabX reading with a trusted timegrapher or verified long-duration rate. Add at least three reference points when possible.</p></section>
+        <section><h3>5. Save & report</h3><p>Timed tests can save automatically. Complete the six positions to generate a full Watch Report. Add front and caseback photos to create a Watch Passport and place the real watch photo in the report.</p></section>
+      </div>
+      <div id="guideAr" class="guide-page" lang="ar" dir="rtl" hidden>
+        <section><h3>١. تهيئة الساعة</h3><p>ضع الساعة قريبًا من مايكروفون الهاتف وفي مكان هادئ. ابدأ بقياس 30 ثانية، وحافظ على ثبات الهاتف والساعة أثناء الاختبار.</p></section>
+        <section><h3>٢. اختر وضع الساعة</h3><p><b>DU</b> المينا للأعلى · <b>DD</b> المينا للأسفل · <b>CU</b> التاج للأعلى · <b>CD</b> التاج للأسفل · <b>CL</b> التاج لليسار · <b>CR</b> التاج لليمين. أكمل الأوضاع الستة للحصول على تقرير كامل.</p></section>
+        <section><h3>٣. قراءة النتائج</h3><p><b>BPH</b> هو تردد نبض الحركة. <b>Rate</b> مقدار التقديم أو التأخير بالثانية/اليوم. <b>Jitter</b> تشتت توقيت النبضات صوتيًا. <b>Signal</b> يعبّر عن قوة الإشارة المفيدة. قيمة Tick/Tock Δ تجريبية ولا تمثل Beat Error معتمدًا.</p></section>
+        <section><h3>٤. المعايرة</h3><p>لرفع دقة Rate، قارن قراءة مستقرة من WatchLabX بجهاز Timegrapher موثوق أو بقياس طويل المدة معلوم. يفضّل استخدام ثلاث نقاط مرجعية أو أكثر.</p></section>
+        <section><h3>٥. الحفظ والتقرير</h3><p>يمكن حفظ الاختبار تلقائيًا عند انتهاء الزمن. بعد إكمال الأوضاع الستة يصدر تقرير كامل. أضف صورة الواجهة وظهر الساعة لتكوين Watch Passport وإظهار صورة الساعة الحقيقية في التقرير.</p></section>
+      </div>
+      <p class="guide-foot">Measurements are screening/analysis results, not a substitute for professional servicing when a watch shows abnormal behavior.</p>
+    </section>
+  </div>
   <div id="reportModal" class="report-modal" hidden>
     <div class="report-backdrop" data-close-report></div>
     <section class="report-sheet" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
@@ -169,6 +215,6 @@
     </section>
   </div>
 
-  <script type="module" src="./app.mjs?v=0.3.0"></script>
+  <script type="module" src="./app.mjs?v=0.3.1"></script>
 </body>
 </html>

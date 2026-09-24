@@ -1,5 +1,5 @@
-import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.3.0';
-import { weightedCalibration, applyRateCalibration, summarizeMeasurements, assessmentFromSummary } from './report.mjs?v=0.3.0';
+import { detectBPH, analyzeTimingLive, signalScore, sensitivityParams } from './core.mjs?v=0.3.1';
+import { weightedCalibration, applyRateCalibration, summarizeMeasurements, assessmentFromSummary } from './report.mjs?v=0.3.1';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -16,7 +16,10 @@ const els = {
   echoSetting:$('echoSetting'), noiseSetting:$('noiseSetting'), gainSetting:$('gainSetting'), channelSetting:$('channelSetting'), sampleSetting:$('sampleSetting'), deviceSetting:$('deviceSetting'),
   selectedChannel:$('selectedChannel'), channelLevels:$('channelLevels'), peakNoise:$('peakNoise'), thresholdSetting:$('thresholdSetting'), secureNote:$('secureNote'), toast:$('toast'),
   calibrationChip:$('calibrationChip'), calibrationStatus:$('calibrationStatus'), calibrationDetail:$('calibrationDetail'), calibrationReference:$('calibrationReference'), addCalibrationBtn:$('addCalibrationBtn'), clearCalibrationBtn:$('clearCalibrationBtn'),
-  reportBtn:$('reportBtn'), reportModal:$('reportModal'), reportContent:$('reportContent'), closeReportBtn:$('closeReportBtn'), printReportBtn:$('printReportBtn'), downloadReportBtn:$('downloadReportBtn')
+  reportBtn:$('reportBtn'), reportModal:$('reportModal'), reportContent:$('reportContent'), closeReportBtn:$('closeReportBtn'), printReportBtn:$('printReportBtn'), downloadReportBtn:$('downloadReportBtn'),
+  helpBtn:$('helpBtn'), helpModal:$('helpModal'), closeHelpBtn:$('closeHelpBtn'), guideEnBtn:$('guideEnBtn'), guideArBtn:$('guideArBtn'), guideEn:$('guideEn'), guideAr:$('guideAr'),
+  frontPhotoInput:$('frontPhotoInput'), backPhotoInput:$('backPhotoInput'), frontPhotoPreview:$('frontPhotoPreview'), backPhotoPreview:$('backPhotoPreview'), frontPhotoEmpty:$('frontPhotoEmpty'), backPhotoEmpty:$('backPhotoEmpty'), removeFrontPhotoBtn:$('removeFrontPhotoBtn'), removeBackPhotoBtn:$('removeBackPhotoBtn'),
+  passportSummary:$('passportSummary'), passportTitle:$('passportTitle'), passportTestCount:$('passportTestCount')
 };
 
 const POSITIONS = {
@@ -55,6 +58,19 @@ function currentCalibration(){ return weightedCalibration(state.library.calibrat
 function calibrationUncertainty(cal){ if(!cal?.count) return 0; if(cal.count===1) return 5; if(cal.count===2) return Math.max(2,Number(cal.spread)||2); return Math.max(.3,Number(cal.spread)||0); }
 function calibratedRate(raw){ return applyRateCalibration(raw,currentCalibration()); }
 function escapeHtml(v){ return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function photoDataUrlOk(v){ return typeof v==='string' && /^data:image\/(jpeg|png|webp);base64,/i.test(v); }
+async function compressWatchPhoto(file){
+  if(!file||!String(file.type||'').startsWith('image/')) throw new Error('Choose an image file');
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=()=>reject(new Error('Could not read image'));i.src=url;});
+    const max=720,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1));
+    const w=Math.max(1,Math.round((img.naturalWidth||1)*scale)),h=Math.max(1,Math.round((img.naturalHeight||1)*scale));
+    const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{alpha:false});ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+    return c.toDataURL('image/jpeg',0.78);
+  }finally{URL.revokeObjectURL(url);}
+}
+function activeWatch(){ return state.library.watches.find(x=>x.id===state.activeWatchId)||null; }
 function showToast(msg){ els.toast.textContent=msg; els.toast.classList.add('show'); clearTimeout(showToast.t); showToast.t=setTimeout(()=>els.toast.classList.remove('show'),2200); }
 function setMicStatus(text,kind='idle'){ els.micStatus.textContent=text; els.micDot.className=`dot ${kind}`; }
 function setQuality(text,kind='idle'){ els.qualityBadge.textContent=text; els.qualityBadge.className=`quality-badge ${kind}`; }
@@ -101,7 +117,7 @@ async function start(){
     const stream=await navigator.mediaDevices.getUserMedia(requestedConstraints(els.inputDevice.value));
     const AC=window.AudioContext||window.webkitAudioContext;
     const context=new AC({latencyHint:'interactive',sampleRate:48000});
-    await context.audioWorklet.addModule('./tick-processor.js?v=0.3.0');
+    await context.audioWorklet.addModule('./tick-processor.js?v=0.3.1');
     await context.resume();
     const source=context.createMediaStreamSource(stream);
     const node=new AudioWorkletNode(context,'watchlabx-tick-processor',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1],channelCount:2,channelCountMode:'max',channelInterpretation:'discrete'});
@@ -360,21 +376,40 @@ function renderWatchSelect(){
   const prev=state.activeWatchId; els.watchSelect.innerHTML='<option value="">+ New watch</option>';
   state.library.watches.forEach(w=>els.watchSelect.add(new Option(`${w.name}${w.model?` — ${w.model}`:''}`,w.id)));
   if(prev&&state.library.watches.some(w=>w.id===prev)) els.watchSelect.value=prev; else els.watchSelect.value='';
-  loadActiveWatchFields(); renderHistory(); renderPositionSummary();
+  loadActiveWatchFields(); renderHistory(); renderPositionSummary(); renderPassport();
 }
-function loadActiveWatchFields(){ const w=state.library.watches.find(x=>x.id===state.activeWatchId); els.watchName.value=w?.name||'';els.watchModel.value=w?.model||'';els.watchMovement.value=w?.movement||''; }
+function loadActiveWatchFields(){ const w=activeWatch(); els.watchName.value=w?.name||'';els.watchModel.value=w?.model||'';els.watchMovement.value=w?.movement||'';renderWatchPhotos();renderPassport(); }
+function setPhotoPreview(kind,data){
+  const img=kind==='front'?els.frontPhotoPreview:els.backPhotoPreview,empty=kind==='front'?els.frontPhotoEmpty:els.backPhotoEmpty,remove=kind==='front'?els.removeFrontPhotoBtn:els.removeBackPhotoBtn;
+  const ok=photoDataUrlOk(data); if(img){img.hidden=!ok; if(ok)img.src=data; else img.removeAttribute('src');} if(empty)empty.hidden=ok; if(remove)remove.disabled=!ok;
+}
+function renderWatchPhotos(){const w=activeWatch();setPhotoPreview('front',w?.photos?.front);setPhotoPreview('back',w?.photos?.back);}
+function renderPassport(){
+  const w=activeWatch();
+  if(!w){els.passportTitle.textContent='Current watch';els.passportTestCount.textContent='0 tests';els.passportSummary.innerHTML='<div class="passport-empty">Create or select a watch to build its passport.<br><span dir="rtl">أنشئ ساعة أو اخترها لعرض جواز الساعة.</span></div>';return;}
+  const ms=calibratedMeasurements(w.measurements||[]),sum=summarizeMeasurements(ms),front=photoDataUrlOk(w?.photos?.front)?`<img src="${w.photos.front}" alt="${escapeHtml(w.name)} front">`:'<div class="passport-placeholder">⌚</div>';
+  const last=ms[0]?.timestamp?new Date(ms[0].timestamp).toLocaleDateString():'Not tested';
+  els.passportTitle.textContent=w.name||'Watch';els.passportTestCount.textContent=`${ms.length} test${ms.length===1?'':'s'}`;
+  els.passportSummary.innerHTML=`<div class="passport-thumb">${front}</div><div class="passport-info"><strong>${escapeHtml(w.name)}</strong><span>${escapeHtml(w.model||'Model / reference not set')}</span><span>${escapeHtml(w.movement||'Movement not set')}</span><small>Last test: ${escapeHtml(last)}</small></div><div class="passport-kpis"><div><small>Positions</small><b>${sum.count||0}/6</b></div><div><small>Mean</small><b>${Number.isFinite(sum.meanRate)?`${sum.meanRate>=0?'+':''}${sum.meanRate.toFixed(1)}`:'—'}</b></div><div><small>Δ</small><b>${Number.isFinite(sum.positionalDelta)?sum.positionalDelta.toFixed(1):'—'}</b></div><div><small>BPH</small><b>${Number.isFinite(sum.dominantBph)?Number(sum.dominantBph).toLocaleString():'—'}</b></div></div>`;
+}
+async function updateWatchPhoto(kind,file){
+  let w=activeWatch(); if(!w){w=saveWatchProfile();if(!w)return;}
+  try{const data=await compressWatchPhoto(file);w.photos=w.photos||{};w.photos[kind]=data;saveLibrary();renderWatchPhotos();renderPassport();showToast(kind==='front'?'Front photo saved':'Caseback photo saved');}
+  catch(e){console.error(e);showToast(e?.message||'Could not save photo');}
+}
+function removeWatchPhoto(kind){const w=activeWatch();if(!w)return;w.photos=w.photos||{};delete w.photos[kind];saveLibrary();renderWatchPhotos();renderPassport();showToast('Photo removed');}
 function saveWatchProfile(){
   const name=els.watchName.value.trim(); if(!name){showToast('Enter a watch name first');return null;}
   let w=state.library.watches.find(x=>x.id===state.activeWatchId);
-  if(!w){w={id:uid(),name,model:'',movement:'',createdAt:new Date().toISOString(),measurements:[]};state.library.watches.unshift(w);state.activeWatchId=w.id;}
-  w.name=name;w.model=els.watchModel.value.trim();w.movement=els.watchMovement.value.trim();saveLibrary();renderWatchSelect();showToast('Watch profile saved');return w;
+  if(!w){w={id:uid(),name,model:'',movement:'',createdAt:new Date().toISOString(),measurements:[],photos:{}};state.library.watches.unshift(w);state.activeWatchId=w.id;}
+  w.name=name;w.model=els.watchModel.value.trim();w.movement=els.watchMovement.value.trim();saveLibrary();renderWatchSelect();renderPassport();showToast('Watch profile saved');return w;
 }
 function saveMeasurement({auto=false}={}){
   if(!state.currentReading){if(!auto)showToast('No valid reading to save');return false;}
   let w=state.library.watches.find(x=>x.id===state.activeWatchId)||saveWatchProfile(); if(!w)return false;
   const before=summarizeMeasurements(calibratedMeasurements(w.measurements||[]));
   const r=state.currentReading;w.measurements=w.measurements||[];w.measurements.unshift({id:uid(),timestamp:new Date().toISOString(),position:r.position,rawRate:+Number(r.rawRate??r.rate).toFixed(2),rate:+r.rate.toFixed(2),calibrationOffset:+Number(r.calibrationOffset||0).toFixed(3),calibrationCount:Number(r.calibrationCount||0),bph:r.bph,jitter:+r.jitter.toFixed(3),alternation:+r.alternation.toFixed(3),signal:Math.round(r.signal),confidence:+r.confidence.toFixed(3),uncertainty:+r.uncertainty.toFixed(2),duration:+r.duration.toFixed(2),testDuration:+(state.targetDurationSec||selectedDuration())});
-  saveLibrary();renderHistory();renderPositionSummary();showToast(`${POSITIONS[r.position]?.short||r.position} ${auto?'saved automatically':'result saved'}`);
+  saveLibrary();renderHistory();renderPositionSummary();renderPassport();showToast(`${POSITIONS[r.position]?.short||r.position} ${auto?'saved automatically':'result saved'}`);
   const after=summarizeMeasurements(calibratedMeasurements(w.measurements));
   if(!before.complete&&after.complete) setTimeout(()=>openReport({auto:true}),300);
   return true;
@@ -389,7 +424,7 @@ function renderPositionSummary(){
 }
 function renderHistory(){
   const ms=measurementsForActive().slice(0,30);els.historyBody.innerHTML='';if(!ms.length){els.historyBody.innerHTML='<div class="empty-history">No saved tests for this watch.</div>';return;}
-  ms.forEach(m=>{const row=document.createElement('div');row.className=`history-row ${Math.abs(m.rate)<=5?'good':Math.abs(m.rate)<=15?'warn':'bad'}`;const d=new Date(m.timestamp);row.innerHTML=`<div><b>${POSITIONS[m.position]?.short||m.position}</b><span>${d.toLocaleString()}</span></div><strong>${m.rate>=0?'+':''}${m.rate.toFixed(1)} <small>s/day</small></strong><span>${m.bph.toLocaleString()} BPH</span><span>jitter ${m.jitter.toFixed(2)} ms</span><span class="history-raw">raw ${Number(m.rawRate??m.rate)>=0?'+':''}${Number(m.rawRate??m.rate).toFixed(1)}</span><button type="button" aria-label="Delete result">×</button>`;row.querySelector('button').addEventListener('click',()=>{const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(w){w.measurements=w.measurements.filter(x=>x.id!==m.id);saveLibrary();renderHistory();renderPositionSummary();}});els.historyBody.appendChild(row);});
+  ms.forEach(m=>{const row=document.createElement('div');row.className=`history-row ${Math.abs(m.rate)<=5?'good':Math.abs(m.rate)<=15?'warn':'bad'}`;const d=new Date(m.timestamp);row.innerHTML=`<div><b>${POSITIONS[m.position]?.short||m.position}</b><span>${d.toLocaleString()}</span></div><strong>${m.rate>=0?'+':''}${m.rate.toFixed(1)} <small>s/day</small></strong><span>${m.bph.toLocaleString()} BPH</span><span>jitter ${m.jitter.toFixed(2)} ms</span><span class="history-raw">raw ${Number(m.rawRate??m.rate)>=0?'+':''}${Number(m.rawRate??m.rate).toFixed(1)}</span><button type="button" aria-label="Delete result">×</button>`;row.querySelector('button').addEventListener('click',()=>{const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(w){w.measurements=w.measurements.filter(x=>x.id!==m.id);saveLibrary();renderHistory();renderPositionSummary();renderPassport();}});els.historyBody.appendChild(row);});
 }
 function exportCsv(){
   const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w||!w.measurements?.length){showToast('No saved tests to export');return;}
@@ -397,7 +432,7 @@ function exportCsv(){
   calibratedMeasurements(w.measurements).slice().reverse().forEach(m=>rows.push([w.name,w.model||'',w.movement||'',m.timestamp,m.position,m.rawRate,m.rate,cal.offset,m.bph,m.jitter,m.alternation,m.signal,m.confidence,m.uncertainty,m.duration,m.testDuration||'']));
   const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const blob=new Blob([csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`WatchLabX-${w.name.replace(/[^a-z0-9_-]+/gi,'_')}.csv`;a.click();URL.revokeObjectURL(url);
 }
-function clearTests(){const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w||!w.measurements?.length)return;if(confirm(`Delete all saved tests for ${w.name}?`)){w.measurements=[];saveLibrary();renderHistory();renderPositionSummary();}}
+function clearTests(){const w=state.library.watches.find(x=>x.id===state.activeWatchId);if(!w||!w.measurements?.length)return;if(confirm(`Delete all saved tests for ${w.name}?`)){w.measurements=[];saveLibrary();renderHistory();renderPositionSummary();renderPassport();}}
 
 function renderCalibration(){
   const cal=currentCalibration();
@@ -439,7 +474,7 @@ function reportMarkup(data){
   const rows=summary.rows.map(m=>`<tr><td>${escapeHtml(POSITIONS[m.position]?.short||m.position)}</td><td>${escapeHtml(reportPositionName(m.position))}</td><td>${reportRate(m.rate)}</td><td>${reportRate(m.rawRate)}</td><td>${Number(m.bph).toLocaleString()}</td><td>${Number(m.jitter).toFixed(2)}</td><td>${Math.round(Number(m.signal))}%</td><td>${Math.round(Number(m.confidence)*100)}%</td></tr>`).join('');
   const calText=cal.count?`${cal.status} • ${cal.offset>=0?'+':''}${cal.offset.toFixed(2)} s/day • ${cal.count} point${cal.count===1?'':'s'}${Number.isFinite(cal.spread)?` • spread ${cal.spread.toFixed(2)}`:''}`:'Uncalibrated — rate values are raw acoustic estimates.';
   return `<article class="report-document">
-    <header><div><span>WATCHLABX TIMING REPORT</span><h3>${escapeHtml(w.name)}</h3><p>${escapeHtml([w.model,w.movement].filter(Boolean).join(' • ')||'Mechanical watch')}</p></div><div class="report-sign">Dr.Eidan</div></header>
+    <header><div><span>WATCHLABX TIMING REPORT</span><h3>${escapeHtml(w.name)}</h3><p>${escapeHtml([w.model,w.movement].filter(Boolean).join(' • ')||'Mechanical watch')}</p></div><div class="report-head-side">${photoDataUrlOk(w?.photos?.front)?`<img class="report-watch-photo" src="${w.photos.front}" alt="Watch front">`:''}<div class="report-sign">Dr.Eidan</div></div></header>
     <div class="report-meta"><span>${now.toLocaleString()}</span><span>${summary.count}/6 positions</span><span>${summary.complete?'Complete six-position set':'Partial set'}</span></div>
     <section class="report-kpis"><div><small>Mean rate</small><strong>${reportRate(summary.meanRate)}</strong><span>s/day</span></div><div><small>Positional Δ</small><strong>${Number.isFinite(summary.positionalDelta)?summary.positionalDelta.toFixed(1):'—'}</strong><span>s/day</span></div><div><small>Mean jitter</small><strong>${Number.isFinite(summary.meanJitter)?summary.meanJitter.toFixed(2):'—'}</strong><span>ms RMS</span></div><div><small>BPH</small><strong>${Number.isFinite(summary.dominantBph)?Number(summary.dominantBph).toLocaleString():'—'}</strong><span>dominant</span></div></section>
     <section class="report-cal"><b>Rate calibration</b><p>${escapeHtml(calText)}</p></section>
@@ -456,14 +491,20 @@ function openReport({auto=false}={}){
 function closeReport(){els.reportModal.hidden=true;document.body.classList.remove('report-open');}
 function printReport(){window.print();}
 function downloadReport(){
-  const data=getReportData();if(!data)return;const body=reportMarkup(data);const css=`body{font-family:Arial,sans-serif;color:#152033;margin:32px}article{max-width:900px;margin:auto}header{display:flex;justify-content:space-between;border-bottom:2px solid #17243a;padding-bottom:16px}.report-sign{font-style:italic;font-size:24px}.report-meta,.report-kpis{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.report-kpis div{border:1px solid #ccd4df;border-radius:12px;padding:12px;min-width:130px}.report-kpis strong{display:block;font-size:24px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}.report-cal,.report-assessment,.report-foot{margin:16px 0;padding:12px;border:1px solid #d9e0e9;border-radius:10px}small,span,p{color:#526176}`;const html=`<!doctype html><meta charset="utf-8"><title>WatchLabX Report - ${escapeHtml(data.w.name)}</title><style>${css}</style>${body}`;const blob=new Blob([html],{type:'text/html'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`WatchLabX-Report-${data.w.name.replace(/[^a-z0-9_-]+/gi,'_')}.html`;a.click();URL.revokeObjectURL(url);
+  const data=getReportData();if(!data)return;const body=reportMarkup(data);const css=`body{font-family:Arial,sans-serif;color:#152033;margin:32px}article{max-width:900px;margin:auto}header{display:flex;justify-content:space-between;border-bottom:2px solid #17243a;padding-bottom:16px}.report-head-side{display:flex;gap:10px;align-items:flex-start}.report-watch-photo{width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid #ccd4df}.report-sign{font-style:italic;font-size:24px}.report-meta,.report-kpis{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}.report-kpis div{border:1px solid #ccd4df;border-radius:12px;padding:12px;min-width:130px}.report-kpis strong{display:block;font-size:24px}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}.report-cal,.report-assessment,.report-foot{margin:16px 0;padding:12px;border:1px solid #d9e0e9;border-radius:10px}small,span,p{color:#526176}`;const html=`<!doctype html><meta charset="utf-8"><title>WatchLabX Report - ${escapeHtml(data.w.name)}</title><style>${css}</style>${body}`;const blob=new Blob([html],{type:'text/html'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`WatchLabX-Report-${data.w.name.replace(/[^a-z0-9_-]+/gi,'_')}.html`;a.click();URL.revokeObjectURL(url);
 }
+
+function openHelp(){els.helpModal.hidden=false;document.body.classList.add('help-open');}
+function closeHelp(){els.helpModal.hidden=true;document.body.classList.remove('help-open');}
+function setGuideLanguage(lang){const ar=lang==='ar';els.guideAr.hidden=!ar;els.guideEn.hidden=ar;els.guideArBtn.classList.toggle('active',ar);els.guideEnBtn.classList.toggle('active',!ar);els.guideArBtn.setAttribute('aria-selected',String(ar));els.guideEnBtn.setAttribute('aria-selected',String(!ar));}
 
 els.startBtn.addEventListener('click',start);els.stopBtn.addEventListener('click',stop);els.resetBtn.addEventListener('click',reset);els.saveResultBtn.addEventListener('click',()=>saveMeasurement());els.durationSelect.addEventListener('change',updateIdleCountdown);
 els.refreshDevicesBtn.addEventListener('click',()=>refreshInputDevices({requestPermission:true}));els.sensitivity.addEventListener('input',applySensitivity);
 els.bphMode.addEventListener('change',()=>{state.lockedBph=null;state.lockedBphConfidence=0;state.candidateBph=null;state.candidateStreak=0;state.node?.port.postMessage({type:'config',minGapSec:.055});});
-els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);els.addCalibrationBtn.addEventListener('click',addCalibrationPoint);els.clearCalibrationBtn.addEventListener('click',clearCalibration);els.reportBtn.addEventListener('click',()=>openReport());els.closeReportBtn.addEventListener('click',closeReport);els.printReportBtn.addEventListener('click',printReport);els.downloadReportBtn.addEventListener('click',downloadReport);els.reportModal.querySelector('[data-close-report]')?.addEventListener('click',closeReport);
+els.watchSelect.addEventListener('change',()=>{state.activeWatchId=els.watchSelect.value||null;saveLibrary();loadActiveWatchFields();renderHistory();renderPositionSummary();renderPassport();});els.saveWatchBtn.addEventListener('click',saveWatchProfile);els.exportCsvBtn.addEventListener('click',exportCsv);els.clearTestsBtn.addEventListener('click',clearTests);els.addCalibrationBtn.addEventListener('click',addCalibrationPoint);els.clearCalibrationBtn.addEventListener('click',clearCalibration);els.reportBtn.addEventListener('click',()=>openReport());els.closeReportBtn.addEventListener('click',closeReport);els.printReportBtn.addEventListener('click',printReport);els.downloadReportBtn.addEventListener('click',downloadReport);els.reportModal.querySelector('[data-close-report]')?.addEventListener('click',closeReport);
+els.helpBtn.addEventListener('click',openHelp);els.closeHelpBtn.addEventListener('click',closeHelp);els.helpModal.querySelector('[data-close-help]')?.addEventListener('click',closeHelp);els.guideEnBtn.addEventListener('click',()=>setGuideLanguage('en'));els.guideArBtn.addEventListener('click',()=>setGuideLanguage('ar'));
+els.frontPhotoInput.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)updateWatchPhoto('front',f);e.target.value='';});els.backPhotoInput.addEventListener('change',e=>{const f=e.target.files?.[0];if(f)updateWatchPhoto('back',f);e.target.value='';});els.removeFrontPhotoBtn.addEventListener('click',()=>removeWatchPhoto('front'));els.removeBackPhotoBtn.addEventListener('click',()=>removeWatchPhoto('back'));
 window.addEventListener('resize',drawAll);window.addEventListener('beforeunload',()=>state.stream?.getTracks().forEach(t=>t.stop()));navigator.mediaDevices?.addEventListener?.('devicechange',()=>{if(!state.running)refreshInputDevices();});
 
 els.secureNote.textContent=window.isSecureContext?'HTTPS secure context • audio stays on this device.':'Open via HTTPS to enable microphone access.';
-refreshInputDevices();renderWatchSelect();renderCalibration();updateIdleCountdown();drawAll();
+refreshInputDevices();renderWatchSelect();renderCalibration();renderPassport();setGuideLanguage('en');updateIdleCountdown();drawAll();

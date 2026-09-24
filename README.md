@@ -1,24 +1,31 @@
-# WatchLabX v0.3.0 — Rate Calibration & Watch Report
+# WatchLabX v0.3.1 — Bilingual Guide & Watch Passport
 
-Mobile-first browser timegrapher for mechanical watches. This release keeps the v0.2.2 BPH detector and timed six-position workflow, and adds reference-based rate calibration plus a printable watch report.
+Mobile-first browser timegrapher for mechanical watches. This release preserves the validated v0.3.0 calibration/report workflow and v0.2.2 BPH detector, while adding a compact bilingual guide and a local Watch Passport with front/caseback photos.
 
-## Rate calibration
-The BPH detector does not require rate calibration. Absolute rate in s/day can, however, inherit a device/browser audio-clock offset. v0.3.0 therefore stores a local calibration offset derived from a trusted reference.
+## Bilingual guide
+A **Guide · الدليل** button is visible in the top bar. The guide can be switched between English and Arabic and covers:
 
-1. Obtain a stable WatchLabX reading (at least about 8 seconds, low uncertainty).
-2. Measure the same watch and position with a trusted timegrapher or a verified long-duration reference.
-3. Enter the trusted rate in **Rate calibration** and press **Use current reading**.
-4. Repeat for at least three calibration points when possible.
+- microphone placement and timed tests
+- the six standard positions (DU, DD, CU, CD, CL, CR)
+- BPH, rate, jitter, signal and experimental Tick/Tock Δ
+- reference-based rate calibration
+- saving tests and generating the final report
 
-The displayed rate then becomes `raw acoustic rate + stored calibration offset`. Raw rate is still shown for transparency. Calibration is stored locally in the browser and can be cleared.
+## Watch Passport
+Each saved watch can now store two optional user-supplied photos:
 
-## Watch report
-Each timed test can be saved to one of six positions: DU, DD, CU, CD, CL and CR. When all six positions have at least one saved result, WatchLabX automatically opens a report. A report can also be opened at any time from **Report**.
+- Front / واجهة الساعة
+- Caseback / ظهر الساعة
 
-The report contains watch identity, mean rate, positional delta, mean jitter, dominant BPH, calibration state, a six-position table, and an informational interpretation. It can be printed/saved as PDF using the browser or downloaded as standalone HTML.
+Images are resized to a maximum dimension of 720 px and compressed to JPEG locally in the browser before storage. They are stored in the same local browser library as the watch and test data; no image upload or server is used by WatchLabX.
+
+The Passport summary shows the watch identity, movement/reference, number of tests, completed positions, mean rate, positional delta and dominant BPH. The user's real front photo is also included in the Watch Report when available.
 
 ## Data continuity
-The existing localStorage key is intentionally retained (`watchlabx.v0.2.0.library`) so watches and measurements saved by v0.2.x remain available after upgrading.
+The existing storage key remains `watchlabx.v0.2.0.library`, so watches, measurements and calibration points from v0.2.x/v0.3.0 remain available after upgrading. Photos are added as optional fields and do not alter older records.
 
-## Important limitation
-WatchLabX is an acoustic browser tool, not a certified timing instrument. Reference calibration corrects a rate offset; it does not validate microphone event detection, beat error, amplitude, or movement condition. `Tick/Tock Δ` remains experimental and is not labeled as certified beat error.
+## Scientific scope
+No timing-analysis algorithm was changed for v0.3.1. BPH detection, rate analysis, calibration and reporting remain the v0.3.0/v0.2.2 implementations. The guide explicitly keeps Tick/Tock Δ experimental and does not label it certified beat error.
+
+## Future path
+The Passport photo structure prepares WatchLabX for a later optional camera/AI identification workflow. AI identification is not included in v0.3.1.
