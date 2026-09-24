@@ -1,31 +1,40 @@
-# WatchLabX v0.3.1 — Bilingual Guide & Watch Passport
+# WatchLabX v0.4.0 — Sensor Lab
 
-Mobile-first browser timegrapher for mechanical watches. This release preserves the validated v0.3.0 calibration/report workflow and v0.2.2 BPH detector, while adding a compact bilingual guide and a local Watch Passport with front/caseback photos.
+WatchLabX v0.4.0 extends the validated mobile timing workflow with optional phone-sensor tools while preserving the v0.3.1 timing core.
 
-## Bilingual guide
-A **Guide · الدليل** button is visible in the top bar. The guide can be switched between English and Arabic and covers:
+## New in v0.4.0
 
-- microphone placement and timed tests
-- the six standard positions (DU, DD, CU, CD, CL, CR)
-- BPH, rate, jitter, signal and experimental Tick/Tock Δ
-- reference-based rate calibration
-- saving tests and generating the final report
+- **Orientation Assist** using `DeviceMotionEvent.accelerationIncludingGravity`.
+- User-learned DU / DD / CU / CD / CL / CR postures. This avoids assuming how a particular phone is oriented or how the watch is coupled to it.
+- Optional **Auto position** after a learned posture is recognized.
+- **Experimental magnetic screening** using the browser Magnetometer API when available.
+- Two-step magnetic workflow: 3 s background capture, then 3 s with the watch near the same sensor area.
+- Reports `ΔB = ||B_watch - B_background||` in microtesla (µT), plus background and watch-field magnitudes.
+- Magnetic screening is stored in the Watch Passport and added to the Watch Report.
+- Bilingual guide updated with Sensor Lab instructions.
 
-## Watch Passport
-Each saved watch can now store two optional user-supplied photos:
+## Scientific boundary
 
-- Front / واجهة الساعة
-- Caseback / ظهر الساعة
+Magnetic screening is intentionally **not** reported as a percentage of magnetization and does not apply a pass/fail threshold. Phone geometry, internal magnets, cases and sensor calibration vary. The value is an experimental field-deviation screening result only.
 
-Images are resized to a maximum dimension of 720 px and compressed to JPEG locally in the browser before storage. They are stored in the same local browser library as the watch and test data; no image upload or server is used by WatchLabX.
+## Browser compatibility
 
-The Passport summary shows the watch identity, movement/reference, number of tests, completed positions, mean rate, positional delta and dominant BPH. The user's real front photo is also included in the Watch Report when available.
+- Motion sensing is broadly useful on mobile browsers, but some platforms require the user to tap **Enable phone sensors** and approve motion access.
+- The web Magnetometer API is not available in every browser. WatchLabX detects support at runtime. If unavailable, timing, Watch Passport, reports and Orientation Assist continue to work.
+- HTTPS is required for microphone and sensor access. GitHub Pages provides HTTPS.
 
-## Data continuity
-The existing storage key remains `watchlabx.v0.2.0.library`, so watches, measurements and calibration points from v0.2.x/v0.3.0 remain available after upgrading. Photos are added as optional fields and do not alter older records.
+## Recommended orientation workflow
 
-## Scientific scope
-No timing-analysis algorithm was changed for v0.3.1. BPH detection, rate analysis, calibration and reporting remain the v0.3.0/v0.2.2 implementations. The guide explicitly keeps Tick/Tock Δ experimental and does not label it certified beat error.
+Keep the physical coupling between watch and phone consistent. For each standard position, select DU/DD/CU/CD/CL/CR, place the phone/watch exactly as you intend to test it, then tap **Learn selected position**. Once learned, Auto position can recognize that phone-specific posture.
 
-## Future path
-The Passport photo structure prepares WatchLabX for a later optional camera/AI identification workflow. AI identification is not included in v0.3.1.
+## Files
+
+- `index.html` — mobile UI
+- `app.mjs` — timing, storage, report and sensor orchestration
+- `core.mjs` — acoustic timing core (unchanged from v0.3.1)
+- `tick-processor.js` — AudioWorklet detector (unchanged)
+- `report.mjs` — timing/report math (unchanged)
+- `sensor.mjs` — Sensor Lab vector/statistics helpers
+- `styles.css` — mobile UI styles
+
+Designed & developed by **Dr.Eidan**.

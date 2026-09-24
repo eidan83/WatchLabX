@@ -7,14 +7,14 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>WatchLabX — Mobile Timegrapher</title>
-  <link rel="stylesheet" href="./styles.css?v=0.3.1" />
+  <link rel="stylesheet" href="./styles.css?v=0.4.0" />
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
       <div>
         <p class="eyebrow">MECHANICAL WATCH ANALYZER</p>
-        <h1>WatchLabX <span>v0.3.1</span></h1>
+        <h1>WatchLabX <span>v0.4.0</span></h1>
         <div class="author-signature" aria-label="Created by Dr. Eidan">Dr.Eidan</div>
       </div>
       <div class="top-actions">
@@ -91,6 +91,41 @@
     <section class="card positions-card">
       <div class="section-head"><div><p class="eyebrow">POSITION TEST</p><h2>Saved positions</h2></div><div class="section-actions"><span id="sessionSummary">No saved position tests yet</span><button id="reportBtn" type="button" class="report-btn">Report</button></div></div>
       <div id="positionSummary" class="position-summary"></div>
+    </section>
+
+    <section class="card sensor-lab-card" aria-labelledby="sensorLabTitle">
+      <div class="section-head">
+        <div><p class="eyebrow">SENSOR LAB</p><h2 id="sensorLabTitle">Phone sensors</h2></div>
+        <span id="sensorBadge" class="sensor-badge idle">Sensors off</span>
+      </div>
+      <p class="sensor-intro">Optional sensor tools stay on this device. Orientation Assist can learn your own phone/watch placement. Magnetic screening is experimental and reports measured field deviation only.</p>
+      <button id="enableSensorsBtn" class="primary sensor-enable" type="button">Enable phone sensors</button>
+
+      <div class="sensor-panels">
+        <article class="sensor-panel">
+          <div class="sensor-panel-head"><div><small>ORIENTATION ASSIST</small><strong id="orientationDetected">Not learned</strong></div><span id="orientationConfidence">—</span></div>
+          <div class="sensor-live-grid">
+            <div><span>Phone posture</span><b id="phonePosture">—</b></div>
+            <div><span>Gravity vector</span><b id="gravityVector">—</b></div>
+          </div>
+          <p class="sensor-help">Keep the watch coupled to the phone in the same physical alignment each time. Select a position, place the phone/watch exactly as you use it, then learn that posture.</p>
+          <label class="sensor-switch"><input id="autoPositionToggle" type="checkbox"><span>Auto-set position when a learned posture is recognized</span></label>
+          <div class="sensor-actions"><button id="learnPositionBtn" type="button" class="save">Learn selected position</button><button id="clearOrientationBtn" type="button" class="ghost">Clear learned</button></div>
+          <div id="orientationProfiles" class="orientation-profile-grid" aria-label="Learned orientation positions"></div>
+        </article>
+
+        <article class="sensor-panel magnetic-panel">
+          <div class="sensor-panel-head"><div><small>MAGNETIC SCREENING · EXPERIMENTAL</small><strong id="magnetometerStatus">Checking browser…</strong></div><span id="magCurrent">— µT</span></div>
+          <div class="sensor-live-grid">
+            <div><span>X / Y / Z</span><b id="magVector">—</b></div>
+            <div><span>Sensor stability</span><b id="magStability">—</b></div>
+          </div>
+          <p class="sensor-help">Keep the phone fixed. First capture the background with the watch away from the phone, then bring the watch to the same marked sensor area and capture again.</p>
+          <div class="sensor-actions"><button id="captureBaselineBtn" type="button" class="secondary" disabled>1 · Background 3 s</button><button id="captureWatchFieldBtn" type="button" class="save" disabled>2 · With watch 3 s</button></div>
+          <div id="magneticResult" class="magnetic-result"><span>No magnetic test saved yet.</span></div>
+          <small class="sensor-caution">This is a field-deviation screening measurement, not a calibrated percentage of watch magnetization and not a substitute for a watchmaker's test.</small>
+        </article>
+      </div>
     </section>
 
     <details class="card watch-card" open>
@@ -189,6 +224,7 @@
         <section><h3>3. Read the result</h3><p><b>BPH</b> is the movement beat rate. <b>Rate</b> is gain/loss in seconds per day. <b>Jitter</b> is acoustic timing scatter. <b>Signal</b> reflects usable microphone strength. Tick/Tock Δ is experimental and is not certified beat error.</p></section>
         <section><h3>4. Calibration</h3><p>For better rate accuracy, compare a stable WatchLabX reading with a trusted timegrapher or verified long-duration rate. Add at least three reference points when possible.</p></section>
         <section><h3>5. Save & report</h3><p>Timed tests can save automatically. Complete the six positions to generate a full Watch Report. Add front and caseback photos to create a Watch Passport and place the real watch photo in the report.</p></section>
+        <section><h3>6. Sensor Lab</h3><p><b>Orientation Assist</b> learns the way you physically couple the watch to your phone, then can recognize DU/DD/CU/CD/CL/CR from the motion sensor. <b>Magnetic screening</b> compares a 3-second background field with a 3-second watch-near-phone field when the browser exposes a magnetometer. Magnetic results are experimental and are reported in µT without a pass/fail claim.</p></section>
       </div>
       <div id="guideAr" class="guide-page" lang="ar" dir="rtl" hidden>
         <section><h3>١. تهيئة الساعة</h3><p>ضع الساعة قريبًا من مايكروفون الهاتف وفي مكان هادئ. ابدأ بقياس 30 ثانية، وحافظ على ثبات الهاتف والساعة أثناء الاختبار.</p></section>
@@ -196,6 +232,7 @@
         <section><h3>٣. قراءة النتائج</h3><p><b>BPH</b> هو تردد نبض الحركة. <b>Rate</b> مقدار التقديم أو التأخير بالثانية/اليوم. <b>Jitter</b> تشتت توقيت النبضات صوتيًا. <b>Signal</b> يعبّر عن قوة الإشارة المفيدة. قيمة Tick/Tock Δ تجريبية ولا تمثل Beat Error معتمدًا.</p></section>
         <section><h3>٤. المعايرة</h3><p>لرفع دقة Rate، قارن قراءة مستقرة من WatchLabX بجهاز Timegrapher موثوق أو بقياس طويل المدة معلوم. يفضّل استخدام ثلاث نقاط مرجعية أو أكثر.</p></section>
         <section><h3>٥. الحفظ والتقرير</h3><p>يمكن حفظ الاختبار تلقائيًا عند انتهاء الزمن. بعد إكمال الأوضاع الستة يصدر تقرير كامل. أضف صورة الواجهة وظهر الساعة لتكوين Watch Passport وإظهار صورة الساعة الحقيقية في التقرير.</p></section>
+        <section><h3>٦. مختبر الحساسات</h3><p><b>مساعد الوضعية</b> يتعلم طريقة تثبيت الساعة مع هاتفك ثم يستطيع التعرف على أوضاع DU/DD/CU/CD/CL/CR من حساس الحركة. أما <b>الفحص المغناطيسي</b> فيقارن مجال الخلفية لمدة 3 ثوانٍ مع المجال عند تقريب الساعة لمدة 3 ثوانٍ إذا كان المتصفح يتيح حساس المغناطيسية. النتيجة تجريبية وتعرض بوحدة µT من دون حكم نجاح/فشل.</p></section>
       </div>
       <p class="guide-foot">Measurements are screening/analysis results, not a substitute for professional servicing when a watch shows abnormal behavior.</p>
     </section>
@@ -215,6 +252,6 @@
     </section>
   </div>
 
-  <script type="module" src="./app.mjs?v=0.3.1"></script>
+  <script type="module" src="./app.mjs?v=0.4.0"></script>
 </body>
 </html>

@@ -1,13 +1,14 @@
-# WatchLabX v0.3.1 — Bilingual Guide & Watch Passport
+# WatchLabX Changelog
 
-- Added always-visible **Guide · الدليل** control optimized for mobile screens.
-- Added compact English quick guide.
-- Added equivalent Arabic RTL quick guide.
-- Added local Watch Passport summary for the active watch.
-- Added optional Front and Caseback image capture/upload controls.
-- Added on-device photo resizing/compression before local storage.
-- Added photo remove controls.
-- Added the user's front watch photo to the timing report when available.
-- Preserved existing watch/test/calibration data via the same localStorage key.
-- Preserved v0.3.0 calibration/report logic and v0.2.2 BPH/timing logic without scientific changes.
-- Retained Dr.Eidan signature.
+## v0.4.0 — Sensor Lab
+
+- Added optional mobile Sensor Lab.
+- Added motion-sensor permission workflow.
+- Added learned orientation profiles for DU/DD/CU/CD/CL/CR.
+- Added optional automatic position selection based on the learned phone/watch posture.
+- Added runtime Magnetometer feature detection.
+- Added two-stage 3 s magnetic screening: background then watch.
+- Added vector magnetic deviation `ΔB` in µT, without claiming calibrated watch magnetization.
+- Added magnetic results to Watch Passport and Watch Report.
+- Updated bilingual Guide with Sensor Lab instructions.
+- Preserved the v0.3.1 timing engine, AudioWorklet detector, calibration math and report math unchanged.
